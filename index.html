@@ -49,11 +49,6 @@ onValue(pmoRef, (snapshot) => {
   window.pptxFile = data.pptxFile || '';
   window.xlsxFile = data.xlsxFile || '';
 
-  // Cargar catálogo si existe en Firebase
-  if (typeof window.loadCatalogFromFirebase === 'function') {
-    window.loadCatalogFromFirebase(data);
-  }
-
   window.DB.forEach(d => { d._estatus = window.normEstatus(d._estatus); });
   window.deduplicateRDB();
 
@@ -378,7 +373,6 @@ tr:hover td{background:var(--bg)}
     <button class="nav-btn" onclick="goPage('graficos',this)"><span class="nav-icon">📊</span>Gráficos</button>
     <button class="nav-btn" onclick="goPage('riesgos',this)"><span class="nav-icon">⚠️</span>Inventario Riesgos</button>
     <button class="nav-btn" onclick="goPage('historico',this)"><span class="nav-icon">🕐</span>Histórico</button>
-    <button class="nav-btn" onclick="goPage('catalogo',this)"><span class="nav-icon">📒</span>Catálogo</button>
   </nav>
   <div class="sidebar-footer">
     <!-- Indicador Firebase -->
@@ -586,24 +580,6 @@ tr:hover td{background:var(--bg)}
     </div>
   </div>
 
-  <!-- CATÁLOGO -->
-  <div class="page" id="page-catalogo">
-    <div class="page-header">
-      <div><div class="page-title">Catálogo</div><div class="page-sub">Directorio de áreas, colaboradores y roles</div></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-primary" onclick="openCatModal()">+ Agregar colaborador</button>
-      </div>
-    </div>
-    <!-- Filtros catálogo -->
-    <div class="filters-bar">
-      <input type="text" id="cat-q" placeholder="🔍 Buscar colaborador..." oninput="renderCatalogo()">
-      <select id="cat-area" onchange="renderCatalogo()"><option value="">Todas las áreas</option></select>
-      <select id="cat-rol"  onchange="renderCatalogo()"><option value="">Todos los roles</option></select>
-      <button class="btn btn-ghost" onclick="document.getElementById('cat-q').value='';document.getElementById('cat-area').value='';document.getElementById('cat-rol').value='';renderCatalogo()">✕ Limpiar</button>
-    </div>
-    <div id="cat-content"></div>
-  </div>
-
 </main>
 </div>
 
@@ -784,15 +760,6 @@ tr:hover td{background:var(--bg)}
 
 <div class="toast" id="toast"></div>
 
-<!-- MODAL CATÁLOGO -->
-<div class="overlay" id="ovCat">
-  <div class="modal" style="width:560px">
-    <div class="modal-header"><span class="modal-title" id="cat-modal-title">Nuevo colaborador</span><button class="modal-close" onclick="closeCatModal()">×</button></div>
-    <div class="modal-body" id="cat-modal-body"></div>
-    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeCatModal()">Cancelar</button><button class="btn btn-primary" onclick="saveCatRecord()">Guardar</button></div>
-  </div>
-</div>
-
 <script>
 'use strict';
 // ══════════════════════════════════════════
@@ -835,7 +802,6 @@ function goPage(name, btn) {
   if (name === 'graficos' && DB.length)  renderCharts();
   if (name === 'riesgos')                { populateRFilters(); applyRFilters(); }
   if (name === 'historico')              renderSnaps();
-  if (name === 'catalogo')              renderCatalogo();
 }
 
 // ══════════════════════════════════════════
@@ -1039,7 +1005,7 @@ const EXCEL_MAP = {
   _pm:         ['pm','p.m.','project manager','gestor','lider proyecto','líder proyecto','lider de proyecto','líder de proyecto','gerente proyecto','gerente de proyecto','responsable proyecto','responsable del proyecto','pm asignado','pm del proyecto'],
   _tl:         ['tl','t.l.','tech lead','technical lead','lider tecnico','líder técnico','lider técnico','líder tecnico','lider tech','líder tech','responsable técnico','responsable tecnico','lead técnico','lead tecnico','tl asignado'],
   _resp:       ['responsable ti','responsable de ti','owner ti','lider ti','líder ti'],
-  _dev:        ['desarrollador','developer','dev','programador','ingeniero','asignado a','asignado','assigned to','recurso'],
+  _dev:        ['desarrollador','desarrolladores','developer','dev','programador','ingeniero de software','asignado a','asignado','recurso asignado','recurso'],
   _area:       ['área','area','solicitante','unidad','depto','departamento','area ti','área ti'],
   _prioridad:  ['prioridad','priorización','priorizacion','priority','urgencia'],
   _avance:     ['avance','avance %','avance%','progreso','% avance','porcentaje'],
@@ -1192,7 +1158,7 @@ async function loadExcel(buffer, filename) {
       )];
       console.warn('⚠️ Estatus no reconocidos:', unrecognizedVals);
       window._lastUnrecognized = unrecognizedVals;
-      // Banner desactivado — solo log en consola para no molestar al usuario
+      // Banner de estatus no reconocido desactivado — solo log en consola
       // setTimeout(() => showUnrecognizedBanner(unrecognizedVals), 800);
     } else {
       window._lastUnrecognized = [];
@@ -1519,11 +1485,11 @@ const COLS = [
   {k:'_estatus',   l:'Estatus'},
   {k:'_pm',        l:'PM'},
   {k:'_resp',      l:'Responsable TI'},
-  {k:'_dev',       l:'Desarrollador'},
   {k:'_area',      l:'Área'},
   {k:'_prioridad', l:'Prioridad'},
   {k:'_avance',    l:'Avance %'},
   {k:'_fase',      l:'Fase'},
+  {k:'_dev',       l:'Desarrollador'},
 ];
 
 function tipoBadge(v)   { const s=(v||'').toLowerCase(); return /proy/.test(s)?'b-blue':/requ/.test(s)?'b-purple':/épica|epica/.test(s)?'b-amber':'b-gray'; }
@@ -1542,11 +1508,10 @@ const SEM=[
 function normEstatus(v) {
   if (!v || v === '—' || v === '' || v === '-' || v === 'N/A' || v === 'n/a') return '—';
 
-  // Limpiar: minúsculas, sin acentos, sin guiones/puntos/paréntesis/bullets/emojis, espacios normalizados
+  // Limpiar: minúsculas, sin acentos, sin guiones/puntos/paréntesis/bullets, espacios normalizados
   const s = v.trim().toLowerCase()
               .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-              .replace(/[_\.\-\(\)●•◉◎○⚫⚪🔴🟡🟢🟠⚠️✅]/g,' ')
-              .replace(/[^\w\s]/g,' ')
+              .replace(/[●•◉○⚫⚪🔴🟡🟢🟠✅⚠️_\.\-\(\)"']/g,' ')
               .replace(/\s+/g,' ').trim();
 
   // 1. Match exacto contra los labels del semáforo (sin acentos)
@@ -1582,12 +1547,11 @@ function normTipo(v) {
   if (!v || v === '—' || v === '') return 'Requerimiento';
   const s = v.trim().toLowerCase()
               .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-              // quitar caracteres especiales como bullets, emojis, etc.
-              .replace(/[^\w\s]/g,' ')
-              .replace(/\s+/g,' ').trim();
+              .replace(/\s+/g,' ');
   if (/proy/.test(s))        return 'Proyecto';
   if (/épica|epica|epic/.test(s)) return 'Épica';
   if (/requ|req/.test(s))   return 'Requerimiento';
+  // Si no matchea nada conocido, defaultear a Requerimiento
   return 'Requerimiento';
 }
 
@@ -1703,7 +1667,6 @@ function openModal(idx) {
     {k:'_fase',     l:'Fase',          type:'sel', opts:['Planeación','Diseño','Desarrollo','Prueba','Implementación','Ejecución','Cierre']},
     {k:'_pm',       l:'PM',            type:'sel', opts:uniqVals('_pm')},
     {k:'_resp',     l:'Responsable TI',type:'sel', opts:uniqVals('_resp')},
-    {k:'_dev',      l:'Desarrollador', type:'sel', opts:uniqVals('_dev')},
     {k:'_area',     l:'Área',          type:'sel', opts:uniqVals('_area')},
     {k:'_prioridad',l:'Prioridad',     type:'sel', opts:['Alta','Media','Baja']},
     {k:'_avance',   l:'Avance %'},
@@ -1796,7 +1759,7 @@ function refreshAllViews() {
 
 const OVERRIDES_KEY = 'pmo_overrides_v1';
 let _pollTimer = null;
-const POLL_MS   = 60000; // 60 segundos
+const POLL_MS   = 30000; // 30 segundos — detecta cambios en Excel rápidamente
 
 function getOverrides() {
   try { return JSON.parse(localStorage.getItem(OVERRIDES_KEY)||'{}'); } catch(e) { return {}; }
@@ -1819,12 +1782,11 @@ function applyOverrides(arr) {
 function startDrivePoll() {
   if (_pollTimer) clearInterval(_pollTimer);
   _pollTimer = setInterval(async () => {
-    // Si Firebase está activo y tiene datos, NO hacer poll de Drive
-    // Firebase ES la fuente de verdad bidireccional
-    if (window._fbInitialized && DB.length > 0) return;
     const cfg = getSyncConfig();
     if (!cfg.excelUrl && !cfg.pptxUrl) return;
-    await loadFromUrls(cfg, true); // silent=true: no toast
+    // Siempre recargar Excel desde la URL → resultado sube a Firebase
+    // Así cualquier corrección en el Excel se propaga a TODOS en tiempo real
+    await loadFromUrls(cfg, true); // silent=true: sin toast
   }, POLL_MS);
 }
 
@@ -2030,29 +1992,7 @@ function renderCharts(){
   buildBar('ch-pm','ct-pm',countBy('_pm'));
   buildPmActivos();
   buildBar('ch-resp','ct-resp',countBy('_resp'));
-  buildBar('ch-dev','ct-dev',countBy('_dev'));
   buildDona('ch-prio','leg-prio','ct-prio',countBy('_prioridad'));
-
-  // Riesgos por estatus (no por impacto)
-  const RSTAT_COLORS = {'Abierto':'#f44336','En proceso':'#ffc107','Cerrado':'#4caf50','Mitigado':'#607d8b'};
-  const rStatCnt = {};
-  RDB.forEach(r => { const s=r.estatus||'Abierto'; rStatCnt[s]=(rStatCnt[s]||0)+1; });
-  const rStatData = Object.entries(rStatCnt).sort((a,b)=>b[1]-a[1]);
-  const rStatCols = rStatData.map(([l])=>RSTAT_COLORS[l]||'#9e9e9e');
-  const legR = document.getElementById('leg-riesgo');
-  if (legR) legR.innerHTML = rStatData.map(([l,c],i)=>`<span class="leg-item"><span class="leg-dot" style="background:${rStatCols[i]}"></span>${l} (${c})</span>`).join('');
-  const totR = rStatData.reduce((s,e)=>s+e[1],0);
-  const ctR = document.getElementById('ct-riesgo');
-  if (ctR) ctR.textContent = 'Total: ' + totR;
-  destroyChart('ch-riesgo');
-  const canvR = document.getElementById('ch-riesgo');
-  if (canvR && rStatData.length) charts['ch-riesgo'] = new Chart(canvR, {
-    type:'doughnut',
-    data:{ labels: rStatData.map(e=>e[0]), datasets:[{ data: rStatData.map(e=>e[1]), backgroundColor: rStatCols, borderWidth:2, borderColor:'#fff' }] },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false },
-      tooltip:{ callbacks:{ label: c=>`${c.label}: ${c.parsed} (${totR?Math.round(c.parsed/totR*100):0}%)` }}}}
-  });
-
   buildLatencia();
 }
 
@@ -3325,22 +3265,77 @@ function exportGraficosHTML() {
   if (!data.length) { toast('Sin datos para exportar', 'error'); return; }
   const now = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
 
-  // Capturar gráficos como imágenes
-  const ids = ['ch-tipo','ch-est','ch-area','ch-pm','ch-pm-activos','ch-resp','ch-prio','ch-riesgo'];
+  // Capturar gráficos como imágenes PNG desde el canvas del app
+  const ids = ['ch-tipo','ch-est','ch-area','ch-pm','ch-pm-activos','ch-resp','ch-dev','ch-prio','ch-riesgo'];
   const imgs = {};
   ids.forEach(id => { const c=document.getElementById(id); if(c){try{imgs[id]=c.toDataURL('image/png');}catch(e){}} });
 
   // Filtros activos
   const fs=[];
-  [['g-tipo','Tipo'],['g-estatus','Estatus'],['g-pm','PM'],['g-resp','Resp. TI'],['g-area','Área']]
+  [['g-tipo','Tipo'],['g-estatus','Estatus'],['g-pm','PM'],['g-resp','Resp. TI'],['g-dev','Desarrollador'],['g-area','Área']]
   .forEach(([id,lbl])=>{const v=document.getElementById(id)?.value;if(v)fs.push(lbl+': '+v);});
 
   const semCnt={};SEM.forEach(s=>{semCnt[s.label]=data.filter(d=>normEstatus(d._estatus)===s.label).length;});
   const nombresData=new Set(data.map(d=>d._nombre).filter(Boolean));
   const rdbF=RDB.filter(r=>nombresData.has(r._proyecto));
 
-  function imgTag(id,title){
-    return imgs[id]?`<div class="cbox"><div class="clbl">${title}</div><img src="${imgs[id]}" style="width:100%;border-radius:6px"></div>`:'';
+  // ── Paleta del app (misma que PAL) ──────────────────────────────────────
+  const EXPORT_PAL=['#1a5fb4','#27ae60','#c0392b','#e67e22','#4a3899','#2c7a6e','#8b2252','#d35400','#16a085','#7f8c8d'];
+
+  // ── Generar leyenda con puntos de color para gráficas de dona ───────────
+  function donaLegend(items) {
+    // items: [{label, color, border, count}]
+    return `<div class="cleg">${items.filter(i=>i.count>0).map(i=>
+      `<span class="cleg-item"><span class="cdot" style="background:${i.color};border:1.5px solid ${i.border||i.color}"></span>${i.label} (${i.count})</span>`
+    ).join('')}</div>`;
+  }
+
+  // ── Leyenda semáforo (exacta del app) ───────────────────────────────────
+  const semLegend = donaLegend(SEM.map(s=>({
+    label: s.label, color: s.hex==='#ffffff'?'#e0e0e0':s.hex, border: s.bdr, count: semCnt[s.label]||0
+  })));
+
+  // ── Leyenda tipo (colores del app) ──────────────────────────────────────
+  const tipoCnt={};data.forEach(d=>{const v=d._tipo||'—';tipoCnt[v]=(tipoCnt[v]||0)+1;});
+  const TIPO_COLORS={'Proyecto':'#1a5fb4','Requerimiento':'#4a3899','Épica':'#e67e22'};
+  const tipoLegend = donaLegend(Object.entries(tipoCnt).sort((a,b)=>b[1]-a[1]).map(([k,v])=>({
+    label:k, color:TIPO_COLORS[k]||'#888', border:TIPO_COLORS[k]||'#888', count:v
+  })));
+
+  // ── Leyenda prioridad ────────────────────────────────────────────────────
+  const prioCnt={};data.forEach(d=>{const v=d._prioridad||'—';prioCnt[v]=(prioCnt[v]||0)+1;});
+  const PRIO_COLORS={'Alta':'#c0392b','Media':'#e67e22','Baja':'#27ae60'};
+  const prioLegend = donaLegend(Object.entries(prioCnt).sort((a,b)=>b[1]-a[1]).map(([k,v])=>({
+    label:k, color:PRIO_COLORS[k]||EXPORT_PAL[0], border:PRIO_COLORS[k]||EXPORT_PAL[0], count:v
+  })));
+
+  // ── Leyenda riesgos por estatus ──────────────────────────────────────────
+  const RSTAT_COLORS={'Abierto':'#f44336','En proceso':'#ffc107','Cerrado':'#4caf50','Mitigado':'#607d8b'};
+  const rStatCntExp={};rdbF.forEach(r=>{const s=(r.estatus||'Abierto').trim();rStatCntExp[s]=(rStatCntExp[s]||0)+1;});
+  const riesgoLegend = donaLegend(Object.entries(rStatCntExp).sort((a,b)=>b[1]-a[1]).map(([k,v])=>({
+    label:k, color:RSTAT_COLORS[k]||'#9e9e9e', border:RSTAT_COLORS[k]||'#9e9e9e', count:v
+  })));
+
+  // ── Leyenda barras (área, pm, resp, dev) con colores del app ─────────────
+  function barLegendHtml(key, maxItems=10) {
+    const cnt={};data.forEach(d=>{const v=d[key]||'—';if(v&&v!=='—')cnt[v]=(cnt[v]||0)+1;});
+    const entries=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,maxItems);
+    return `<div class="cleg">${entries.map(([k,v],i)=>
+      `<span class="cleg-item"><span class="cdot" style="background:${EXPORT_PAL[i%EXPORT_PAL.length]};border:none"></span>${k} (${v})</span>`
+    ).join('')}</div>`;
+  }
+
+  // ── Función para renderizar imagen con leyenda ───────────────────────────
+  function imgTag(id, title, desc, legendHtml){
+    if (!imgs[id]) return '';
+    const descHtml = desc ? `<div class="cdesc">${desc}</div>` : '';
+    const legHtml  = legendHtml || '';
+    return `<div class="cbox">
+      <div class="clbl">${title}</div>
+      ${descHtml}
+      <img src="${imgs[id]}" style="width:100%;border-radius:6px${legHtml?';margin-bottom:8px':''}">
+      ${legHtml}
+    </div>`;
   }
 
   const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
@@ -3350,53 +3345,69 @@ function exportGraficosHTML() {
 body{font-family:-apple-system,'Segoe UI',sans-serif;color:#181816;background:#f5f4f1;font-size:13px}
 .hdr{background:linear-gradient(135deg,#0d3b78,#1a5fb4);color:#fff;padding:2rem 2.5rem}
 .hdr-t{font-size:22px;font-weight:900;margin-bottom:4px}.hdr-s{font-size:12px;opacity:.8}
-.body{max-width:1100px;margin:0 auto;padding:2rem}
+.hdr-meta{display:flex;flex-wrap:wrap;gap:16px;margin-top:14px}
+.hkpi{background:rgba(255,255,255,.15);border-radius:8px;padding:8px 14px;text-align:center}
+.hkv{font-size:24px;font-weight:900;line-height:1}.hkl{font-size:9px;opacity:.8;margin-top:2px;text-transform:uppercase;letter-spacing:.4px}
+.body{max-width:1200px;margin:0 auto;padding:2rem}
 .sec{background:#fff;border-radius:10px;border:.5px solid rgba(0,0,0,.09);padding:1.5rem;margin-bottom:1.25rem;box-shadow:0 1px 3px rgba(0,0,0,.05)}
-h2{font-size:14px;font-weight:800;color:#0d3b78;margin-bottom:1rem}
-.kpis{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:1.25rem}
-.kpi{background:#f7f6f3;border-radius:8px;padding:.875rem 1.25rem;text-align:center;min-width:90px;flex:1}
-.kv{font-size:30px;font-weight:900;line-height:1}.kl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#a8a6a0;margin-top:3px}
+.sec-desc{font-size:11px;color:#6b6a65;margin-bottom:1rem;padding-bottom:.75rem;border-bottom:.5px solid #eeede8;line-height:1.6}
+h2{font-size:14px;font-weight:800;color:#0d3b78;margin-bottom:.4rem}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.full{grid-column:1/-1}
-.cbox{background:#f7f6f3;border-radius:8px;padding:12px}.clbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#a8a6a0;margin-bottom:8px}
+.cbox{background:#f7f6f3;border-radius:8px;padding:14px}
+.clbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#0d3b78;margin-bottom:4px;padding-bottom:6px;border-bottom:.5px solid #e0ddd8}
+.cdesc{font-size:11px;color:#6b6a65;margin-bottom:8px;line-height:1.5}
+.cleg{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;padding-top:8px;border-top:.5px solid #e0ddd8}
+.cleg-item{display:inline-flex;align-items:center;gap:5px;background:#fff;border:.5px solid #e0ddd8;border-radius:4px;padding:3px 8px;font-size:10px;color:#3a3a38;font-weight:600}
+.cdot{width:10px;height:10px;border-radius:50%;flex-shrink:0;display:inline-block}
 table{width:100%;border-collapse:collapse}
 th{text-align:left;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#a8a6a0;background:#f0ede8;border-bottom:.5px solid rgba(0,0,0,.09)}
 td{padding:8px 12px;border-bottom:.5px solid rgba(0,0,0,.07);vertical-align:middle}
 tr:last-child td{border-bottom:none}tr:nth-child(even) td{background:#fafaf9}
 .badge{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;white-space:nowrap}
 .bw{display:flex;align-items:center;gap:6px}.bb{flex:1;background:#eeede8;border-radius:3px;height:5px;min-width:40px}.bf{background:#1a5fb4;border-radius:3px;height:5px}
-.ftr{text-align:center;padding:1.5rem;font-size:11px;color:#a8a6a0}
+.note{background:#f0ede8;border-radius:6px;padding:8px 12px;font-size:11px;color:#5a5955;border-left:3px solid #1a5fb4;margin-top:10px}
+.ftr{text-align:center;padding:1.5rem;font-size:11px;color:#a8a6a0;border-top:.5px solid #eeede8;margin-top:1rem}
 @media print{body{background:#fff}.body{padding:.5rem 1rem}.sec{box-shadow:none;border:.5px solid #ddd}@page{margin:1.5cm;size:A4 landscape}}
 </style></head><body>
 <div class="hdr">
   <div style="font-size:26px;margin-bottom:6px">📊</div>
   <div class="hdr-t">PMO · Reporte de Gráficos</div>
-  <div class="hdr-s">${now} · ${data.length} iniciativas${fs.length?' · Filtros: '+fs.join(' · '):''}</div>
+  <div class="hdr-s">${now}${fs.length?' · Filtros: '+fs.join(' · '):''}</div>
+  <div class="hdr-meta">
+    <div class="hkpi"><div class="hkv">${data.length}</div><div class="hkl">Total iniciativas</div></div>
+    <div class="hkpi"><div class="hkv" style="color:#a8f0b4">${semCnt['En tiempo']||0}</div><div class="hkl">🟢 En tiempo</div></div>
+    <div class="hkpi"><div class="hkv" style="color:#ffb3b3">${semCnt['Con problema']||0}</div><div class="hkl">🔴 Con problema</div></div>
+    <div class="hkpi"><div class="hkv" style="color:#ffe08a">${semCnt['En riesgo']||0}</div><div class="hkl">🟡 En riesgo</div></div>
+    <div class="hkpi"><div class="hkv" style="color:#b3d9ff">${semCnt['Finalizado']||0}</div><div class="hkl">✅ Finalizado</div></div>
+    ${rdbF.length?`<div class="hkpi"><div class="hkv" style="color:#ffb3b3">${rdbF.length}</div><div class="hkl">⚠️ Riesgos</div></div>`:''}
+  </div>
 </div>
 <div class="body">
-  <div class="kpis">
-    <div class="kpi"><div class="kv" style="color:#1a5fb4">${data.length}</div><div class="kl">Total</div></div>
-    <div class="kpi"><div class="kv" style="color:#2d6a1f">${semCnt['En tiempo']||0}</div><div class="kl">En Tiempo</div></div>
-    <div class="kpi"><div class="kv" style="color:#b71c1c">${semCnt['Con problema']||0}</div><div class="kl">Con Problema</div></div>
-    <div class="kpi"><div class="kv" style="color:#e65100">${semCnt['En riesgo']||0}</div><div class="kl">En Riesgo</div></div>
-    <div class="kpi"><div class="kv" style="color:#607d8b">${semCnt['Finalizado']||0}</div><div class="kl">Finalizado</div></div>
-    ${rdbF.length?`<div class="kpi"><div class="kv" style="color:#f44336">${rdbF.length}</div><div class="kl">Riesgos</div></div>`:''}
-  </div>
   <div class="sec">
-    <h2>📊 Gráficos (según filtros)</h2>
+    <h2>📊 Distribución del Portafolio</h2>
+    <p class="sec-desc">Análisis visual de las <strong>${data.length} iniciativas</strong> incluidas en este reporte${fs.length?' con los filtros: '+fs.join(', '):' (portafolio completo)'}. Cada gráfica muestra la distribución por la dimensión indicada. Las leyendas debajo de cada gráfica detallan los valores exactos.</p>
     <div class="grid">
-      ${imgTag('ch-tipo','Por tipo')}
-      ${imgTag('ch-est','Por estatus')}
-      ${imgTag('ch-prio','Por prioridad')}
-      ${imgTag('ch-riesgo','Riesgos por impacto')}
-      <div class="full">${imgTag('ch-area','Por área TI')}</div>
-      <div class="full">${imgTag('ch-pm','Por PM')}</div>
-      <div class="full">${imgTag('ch-pm-activos','PM · Proyectos activos por estatus')}</div>
-      <div class="full">${imgTag('ch-resp','Por Responsable TI')}</div>
+      ${imgTag('ch-tipo','Por tipo de iniciativa','Distribución entre Proyectos, Requerimientos y Épicas.',tipoLegend)}
+      ${imgTag('ch-est','Por estatus (semáforo)','Estado actual de cada iniciativa según el semáforo PMO.',semLegend)}
+      ${imgTag('ch-prio','Por prioridad','Distribución según nivel de urgencia: Alta, Media o Baja.',prioLegend)}
+      ${imgs['ch-riesgo']?`<div class="cbox">
+        <div class="clbl">Riesgos por estatus</div>
+        <div class="cdesc">Estado actual de los ${rdbF.length} riesgos registrados para las iniciativas de este reporte.</div>
+        <img src="${imgs['ch-riesgo']}" style="width:100%;border-radius:6px;margin-bottom:8px">
+        ${riesgoLegend}
+      </div>`:''}
+      <div class="full">${imgTag('ch-area','Por área de TI','Cantidad de iniciativas por área tecnológica responsable.',barLegendHtml('_area'))}</div>
+      <div class="full">${imgTag('ch-pm','Por Project Manager','Distribución de iniciativas entre los PM del portafolio.',barLegendHtml('_pm'))}</div>
+      <div class="full">${imgTag('ch-pm-activos','PM · Proyectos activos por estatus','Desglose por semáforo de los proyectos activos de cada PM. Excluye "En pausa" y "Sin iniciar".')}</div>
+      <div class="full">${imgTag('ch-resp','Por Responsable TI (Tech Lead)','Cantidad de iniciativas asignadas a cada Tech Lead o Responsable TI.',barLegendHtml('_resp'))}</div>
+      <div class="full">${imgTag('ch-dev','Por Desarrollador','Iniciativas por desarrollador o recurso asignado.',barLegendHtml('_dev'))}</div>
     </div>
+    <div class="note">💡 <strong>Cómo leer este reporte:</strong> Cada gráfica de dona muestra la proporción de cada segmento. Las barras horizontales muestran comparativas entre valores. Los colores del semáforo son: 🟢 Verde = En tiempo · 🟡 Amarillo = En riesgo · 🔴 Rojo = Con problema · 🟠 Naranja = En pausa · ⚪ Blanco = Sin iniciar · ✅ Gris = Finalizado.</div>
   </div>
   <div class="sec">
     <h2>📋 Detalle de Iniciativas (${data.length})</h2>
-    <table><thead><tr><th>Tipo</th><th>Nombre</th><th>Estatus</th><th>PM</th><th>Resp. TI</th><th>Área</th><th>Prioridad</th><th>Avance</th></tr></thead>
+    <p class="sec-desc">Listado completo de las iniciativas incluidas en este reporte. <strong>TL/Resp. TI</strong> = Tech Lead o Responsable de TI · <strong>Dev</strong> = Desarrollador asignado · <strong>Avance</strong> = % completitud reportado.</p>
+    <table><thead><tr><th>Tipo</th><th>Nombre</th><th>Estatus</th><th>PM</th><th>TL / Resp. TI</th><th>Dev</th><th>Área</th><th>Prioridad</th><th>Avance</th></tr></thead>
     <tbody>${data.map(d=>{
       const m=semGet(d._estatus);
       const sb=m?`background:${m.bg};color:${m.color};border:1.5px solid ${m.bdr}`:'background:#eeede8;color:#5a5955';
@@ -3405,9 +3416,9 @@ tr:last-child td{border-bottom:none}tr:nth-child(even) td{background:#fafaf9}
       const av=d._avance||0;
       return`<tr>
         <td><span class="badge" style="${tb}">${d._tipo||'—'}</span></td>
-        <td style="font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d._nombre||'—'}</td>
+        <td style="font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${d._nombre||''}">${d._nombre||'—'}</td>
         <td><span class="badge" style="${sb}"><span style="width:8px;height:8px;border-radius:50%;background:${m?m.hex:'#e0e0e0'};border:1.5px solid ${m?m.bdr:'#ccc'};display:inline-block;flex-shrink:0"></span>${d._estatus||'—'}</span></td>
-        <td>${d._pm||'—'}</td><td>${d._resp||'—'}</td><td>${d._area||'—'}</td>
+        <td>${d._pm||'—'}</td><td>${d._resp||'—'}</td><td>${d._dev||'—'}</td><td>${d._area||'—'}</td>
         <td><span class="badge" style="${pb}">${d._prioridad||'—'}</span></td>
         <td><div class="bw"><div class="bb"><div class="bf" style="width:${av}%"></div></div><span style="font-size:11px;font-weight:700;color:#6b6a65">${av}%</span></div></td>
       </tr>`;}).join('')}
@@ -3415,14 +3426,17 @@ tr:last-child td{border-bottom:none}tr:nth-child(even) td{background:#fafaf9}
   </div>
   ${rdbF.length?`<div class="sec">
     <h2>⚠️ Riesgos (${rdbF.length})</h2>
-    <table><thead><tr><th>ID</th><th>Proyecto</th><th>Riesgo</th><th>Impacto</th><th>Responsable</th><th>Estatus</th></tr></thead>
+    <p class="sec-desc">Inventario de riesgos asociados a las iniciativas de este reporte. <strong>Estatus:</strong> Abierto = activo sin mitigar · En proceso = en atención · Cerrado/Mitigado = resuelto.</p>
+    <table><thead><tr><th>ID</th><th>Proyecto / Req.</th><th>Riesgo</th><th>Impacto</th><th>Responsable</th><th>Estatus</th></tr></thead>
     <tbody>${rdbF.map(r=>{
       const ib=/muy|alto/i.test(r.impacto||'')?['#ffebee','#b71c1c']:/medio/i.test(r.impacto||'')?['#fff8e1','#e65100']:['#e8f5e9','#1b5e20'];
+      const sb=/abierto|activo/i.test(r.estatus||'')?['#ffebee','#b71c1c']:/proceso/i.test(r.estatus||'')?['#fff8e1','#e65100']:['#e8f5e9','#1b5e20'];
       return`<tr><td style="font-family:monospace;font-size:11px">${r.rid}</td><td>${r._proyecto}</td><td>${r.riesgo}</td>
-        <td><span style="padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;background:${ib[0]};color:${ib[1]}">${r.impacto}</span></td>
-        <td>${r.responsable}</td><td>${r.estatus}</td></tr>`;}).join('')}
+        <td><span style="padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;background:${ib[0]};color:${ib[1]}">${r.impacto||'—'}</span></td>
+        <td>${r.responsable}</td>
+        <td><span style="padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;background:${sb[0]};color:${sb[1]}">${r.estatus||'—'}</span></td></tr>`;}).join('')}
     </tbody></table></div>`:''}
-  <div class="ftr">PMO · TI · ${now} · ${data.length} iniciativas</div>
+  <div class="ftr">PMO · TI · ${now} · ${data.length} iniciativas${rdbF.length?' · '+rdbF.length+' riesgos':''} · Generado con PMO Portafolio TI</div>
 </div></body></html>`;
 
   const blob=new Blob([html],{type:'text/html;charset=utf-8'});
@@ -3521,23 +3535,23 @@ function renderChartsFromData(data) {
   buildBar('ch-resp','ct-resp', countByData('_resp', data));
   buildBar('ch-dev','ct-dev', countByData('_dev', data));
   buildDona('ch-prio','leg-prio','ct-prio', countByData('_prioridad', data));
-  // ── Riesgos por ESTATUS (no por impacto) ──────────────────────────────────
+  // ── Riesgos por ESTATUS ──────────────────────────────────────────────────
   const nombresData = new Set(data.map(d=>d._nombre).filter(Boolean));
   const rdbVis = RDB.filter(r => nombresData.has(r._proyecto));
   const RSTAT_COLORS = {'Abierto':'#f44336','En proceso':'#ffc107','Cerrado':'#4caf50','Mitigado':'#607d8b'};
-  const rStatCnt2 = {};
-  rdbVis.forEach(r => { const s=(r.estatus||'Abierto').trim(); rStatCnt2[s]=(rStatCnt2[s]||0)+1; });
-  const rStatData2 = Object.entries(rStatCnt2).sort((a,b)=>b[1]-a[1]);
-  const rStatCols2 = rStatData2.map(([l])=>RSTAT_COLORS[l]||'#9e9e9e');
+  const rStatCnt = {};
+  rdbVis.forEach(r => { const s=(r.estatus||'Abierto').trim(); rStatCnt[s]=(rStatCnt[s]||0)+1; });
+  const riesgoData = Object.entries(rStatCnt).sort((a,b)=>b[1]-a[1]);
+  const rCols = riesgoData.map(([l])=>RSTAT_COLORS[l]||'#9e9e9e');
   const rTot  = rdbVis.length;
   const ctR = document.getElementById('ct-riesgo'); if(ctR) ctR.textContent='Total: '+rTot;
   const legR = document.getElementById('leg-riesgo');
-  if(legR) legR.innerHTML = rStatData2.map(([l,c],i)=>`<span class="leg-item"><span class="leg-dot" style="background:${rStatCols2[i]};border-radius:50%"></span>${l} (${c})</span>`).join('');
+  if(legR) legR.innerHTML = riesgoData.map(([l,c],i)=>`<span class="leg-item"><span class="leg-dot" style="background:${rCols[i]};border-radius:50%"></span>${l} (${c})</span>`).join('');
   destroyChart('ch-riesgo');
   const canvR = document.getElementById('ch-riesgo');
   if(canvR && rTot>0) {
     charts['ch-riesgo'] = new Chart(canvR,{type:'doughnut',
-      data:{labels:rStatData2.map(e=>e[0]),datasets:[{data:rStatData2.map(e=>e[1]),backgroundColor:rStatCols2,borderWidth:2,borderColor:'#fff'}]},
+      data:{labels:riesgoData.map(e=>e[0]),datasets:[{data:riesgoData.map(e=>e[1]),backgroundColor:rCols,borderWidth:2,borderColor:'#fff'}]},
       options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
         tooltip:{callbacks:{label:c=>`${c.label}: ${c.parsed} (${rTot?Math.round(c.parsed/rTot*100):0}%)`}}}}});
   } else if(canvR) {
@@ -3676,8 +3690,12 @@ function exportHTMLReport(data){
 <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,'Segoe UI',sans-serif;color:#181816;background:#f5f4f1;font-size:13px}
 .header{background:linear-gradient(135deg,#0d3b78,#1a5fb4);color:#fff;padding:2.5rem 3rem}
 .header-title{font-size:26px;font-weight:900;margin-bottom:6px}.header-sub{font-size:13px;opacity:.8}
-.body{max-width:1100px;margin:0 auto;padding:2rem}.section{background:#fff;border-radius:12px;border:.5px solid rgba(0,0,0,.09);padding:1.75rem;margin-bottom:1.5rem;box-shadow:0 1px 4px rgba(0,0,0,.06)}
-h2{font-size:15px;font-weight:800;color:#0d3b78;margin-bottom:1.25rem}.kpi-row{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:1.5rem}
+.header-meta{display:flex;flex-wrap:wrap;gap:20px;margin-top:16px}
+.header-kpi{background:rgba(255,255,255,.15);border-radius:8px;padding:10px 16px;text-align:center}
+.header-kpi-val{font-size:28px;font-weight:900;line-height:1}.header-kpi-lbl{font-size:10px;opacity:.8;margin-top:2px;text-transform:uppercase;letter-spacing:.5px}
+.body{max-width:1200px;margin:0 auto;padding:2rem}.section{background:#fff;border-radius:12px;border:.5px solid rgba(0,0,0,.09);padding:1.75rem;margin-bottom:1.5rem;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.section-desc{font-size:12px;color:#6b6a65;margin-bottom:1.25rem;padding-bottom:.75rem;border-bottom:.5px solid #eeede8;line-height:1.6}
+h2{font-size:15px;font-weight:800;color:#0d3b78;margin-bottom:.5rem}.kpi-row{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:1.5rem}
 .kpi{background:#f7f6f3;border-radius:10px;padding:1rem 1.5rem;text-align:center;min-width:100px;flex:1}.kpi-val{font-size:34px;font-weight:900;line-height:1}.kpi-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#a8a6a0;margin-top:4px}
 .sem-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.sem-card{border-radius:8px;padding:14px}.sem-dot{width:14px;height:14px;border-radius:50%;margin-bottom:6px}
 .sem-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px}.sem-cnt{font-size:30px;font-weight:900;line-height:1;margin-bottom:2px}.sem-pct{font-size:11px;font-weight:600;opacity:.7;margin-bottom:6px}
@@ -3686,29 +3704,44 @@ table{width:100%;border-collapse:collapse}th{text-align:left;padding:9px 12px;fo
 td{padding:9px 12px;border-bottom:.5px solid rgba(0,0,0,.07);vertical-align:middle}tr:last-child td{border-bottom:none}tr:nth-child(even) td{background:#fafaf9}
 .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap}
 .bar-w{display:flex;align-items:center;gap:7px}.bar-bg{flex:1;background:#eeede8;border-radius:3px;height:5px;min-width:50px}.bar-fill{background:#1a5fb4;border-radius:3px;height:5px}
-.footer{text-align:center;padding:1.5rem;font-size:11px;color:#a8a6a0}.pb{page-break-before:always}
+.footer{text-align:center;padding:1.5rem;font-size:11px;color:#a8a6a0;border-top:.5px solid #eeede8;margin-top:1rem}
+.legend-note{font-size:11px;color:#6b6a65;margin-top:12px;padding:8px 12px;background:#f7f6f3;border-radius:6px;border-left:3px solid #1a5fb4}
 @media print{body{background:#fff}.body{padding:.5rem 1rem}.section{box-shadow:none;border:.5px solid #ddd;margin-bottom:.75rem}@page{margin:1.5cm;size:A4 landscape}}
 </style></head><body>
-<div class="header"><div style="font-size:32px;margin-bottom:8px">📊</div><div class="header-title">PMO · Reporte de Portafolio TI</div>
-<div class="header-sub">${inclFecha?'Generado el '+now:''} · ${data.length} iniciativas</div></div>
+<div class="header">
+  <div style="font-size:32px;margin-bottom:8px">📊</div>
+  <div class="header-title">PMO · Reporte de Portafolio TI</div>
+  <div class="header-sub">${inclFecha?'Generado el '+now:''} · ${data.length} iniciativas incluidas en este reporte</div>
+  <div class="header-meta">
+    <div class="header-kpi"><div class="header-kpi-val">${data.length}</div><div class="header-kpi-lbl">Total iniciativas</div></div>
+    <div class="header-kpi"><div class="header-kpi-val">${data.filter(d=>d._tipo==='Proyecto').length}</div><div class="header-kpi-lbl">Proyectos</div></div>
+    <div class="header-kpi"><div class="header-kpi-val">${data.filter(d=>d._tipo==='Requerimiento').length}</div><div class="header-kpi-lbl">Requerimientos</div></div>
+    <div class="header-kpi"><div class="header-kpi-val">${rdbFiltrado.length}</div><div class="header-kpi-lbl">Riesgos activos</div></div>
+    <div class="header-kpi"><div class="header-kpi-val">${semCnt['En tiempo']||0}</div><div class="header-kpi-lbl">🟢 En tiempo</div></div>
+    <div class="header-kpi"><div class="header-kpi-val">${(semCnt['En riesgo']||0)+(semCnt['Con problema']||0)}</div><div class="header-kpi-lbl">🔴 Con alerta</div></div>
+  </div>
+</div>
 <div class="body">
 ${semSec}
 <div class="section"><h2>📋 Detalle de Iniciativas (${data.length})</h2>
-<table><thead><tr><th>Tipo</th><th>Nombre</th><th>Estatus</th><th>PM</th><th>TL</th><th>Área</th><th>Prioridad</th><th>Avance</th><th>Fase</th></tr></thead>
+<p class="section-desc">Listado completo de proyectos y requerimientos incluidos en este reporte. <strong>Estatus</strong> refleja el semáforo actual · <strong>Avance</strong> indica el porcentaje de completitud · <strong>TL</strong> es el Tech Lead o Responsable TI · <strong>Desarrollador</strong> es el recurso asignado.</p>
+<table><thead><tr><th title="Proyecto, Requerimiento o Épica">Tipo</th><th>Nombre</th><th title="Semáforo de avance: En tiempo / En riesgo / Con problema / En pausa / Sin iniciar / Finalizado">Estatus</th><th title="Project Manager responsable de la iniciativa">PM</th><th title="Tech Lead o Responsable TI">TL / Resp. TI</th><th title="Desarrollador o recurso asignado">Desarrollador</th><th title="Área de TI dueña de la iniciativa">Área TI</th><th title="Nivel de urgencia: Alta / Media / Baja">Prioridad</th><th title="Porcentaje de avance reportado">Avance</th><th title="Etapa actual del ciclo de vida">Fase</th></tr></thead>
 <tbody>${data.map(d=>{const m=semGet(d._estatus);const sb=m?`background:${m.bg};color:${m.color};border:1.5px solid ${m.bdr}`:'background:#eeede8;color:#5a5955';
   const tb=d._tipo==='Proyecto'?'background:#deeaf8;color:#0d3b78':d._tipo==='Requerimiento'?'background:#eceafe;color:#4a3899':'background:#faebd6;color:#7a4a09';
   const pb=/alta|crít/i.test(d._prioridad||'')?'background:#fbeaea;color:#a0342b':/media/i.test(d._prioridad||'')?'background:#faebd6;color:#7a4a09':'background:#e4f2de;color:#2d6a1f';
   const av=d._avance||0;
   return`<tr><td><span class="badge" style="${tb}">${d._tipo||'—'}</span></td>
-  <td style="font-weight:600;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${d._nombre||'—'}</td>
+  <td style="font-weight:600;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${d._nombre||''}">${d._nombre||'—'}</td>
   <td><span class="badge" style="${sb}"><span style="width:8px;height:8px;border-radius:50%;background:${m?m.hex:'#e0e0e0'};border:1.5px solid ${m?m.bdr:'#ccc'};display:inline-block;flex-shrink:0"></span>${d._estatus||'—'}</span></td>
-  <td>${d._pm||'—'}</td><td>${d._resp||'—'}</td><td>${d._area||'—'}</td>
+  <td>${d._pm||'—'}</td><td>${d._resp||'—'}</td><td>${d._dev||'—'}</td><td>${d._area||'—'}</td>
   <td><span class="badge" style="${pb}">${d._prioridad||'—'}</span></td>
   <td><div class="bar-w"><div class="bar-bg"><div class="bar-fill" style="width:${av}%"></div></div><span style="font-size:11px;font-weight:700;color:#6b6a65">${av}%</span></div></td>
   <td style="color:#6b6a65">${d._fase||'—'}</td></tr>`;}).join('')}
-</tbody></table></div>
+</tbody></table>
+<div class="legend-note">💡 <strong>Guía de colores:</strong> 🔵 Proyecto · 🟣 Requerimiento · 🟡 Épica &nbsp;|&nbsp; 🟢 En tiempo · 🟡 En riesgo · 🔴 Con problema · 🟠 En pausa · ⚪ Sin iniciar · ✅ Finalizado &nbsp;|&nbsp; 🔴 Alta prioridad · 🟡 Media · 🟢 Baja</div>
+</div>
 ${riskSec}
-<div class="footer">PMO · TI ${inclFecha?'· '+now:''} · ${data.length} iniciativas${rdbFiltrado.length?' · '+rdbFiltrado.length+' riesgos':''}</div>
+<div class="footer">PMO · TI ${inclFecha?'· '+now:''} · ${data.length} iniciativas${rdbFiltrado.length?' · '+rdbFiltrado.length+' riesgos':''} · Generado con PMO Portafolio TI</div>
 </div></body></html>`;
   const blob=new Blob([html],{type:'text/html;charset=utf-8'});
   const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='PMO_Reporte_'+new Date().toISOString().slice(0,10)+'.html';a.click();URL.revokeObjectURL(url);
@@ -3922,10 +3955,10 @@ async function _buildChartsPngFromData(data) {
 
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
-    ['ovData','ovDel','ovRiesgo','ovRDel','ovSync','ovExport','ovCat'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('open');});
+    ['ovData','ovDel','ovRiesgo','ovRDel','ovSync','ovExport'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('open');});
   }
 });
-['ovData','ovDel','ovRiesgo','ovRDel','ovSync','ovExport','ovCat'].forEach(id=>{
+['ovData','ovDel','ovRiesgo','ovRDel','ovSync','ovExport'].forEach(id=>{
   const el=document.getElementById(id);if(!el)return;
   el.addEventListener('click',e=>{if(e.target===e.currentTarget)e.target.classList.remove('open');});
 });
@@ -3936,206 +3969,6 @@ window.deduplicateRDB    = deduplicateRDB;
 window.restoreUIFromData = restoreUIFromData;
 window.refreshAllViews   = refreshAllViews;
 window.toast             = toast;
-window.loadCatalogFromFirebase = loadCatalogFromFirebase;
-
-// ══════════════════════════════════════════
-// CATÁLOGO DE COLABORADORES
-// ══════════════════════════════════════════
-// Estado del catálogo — precargado con los datos del Excel
-let CATALOGO = [
-  // CORE
-  {id:'c1',  area:'CORE',             nombre:'Mario Sanchez Vazquez',       rol:'Lider área',   tl:''},
-  {id:'c2',  area:'CORE',             nombre:'Moises Vazquez Sanches',      rol:'Desarrollador',tl:'Mario Sanchez Vazquez'},
-  {id:'c3',  area:'CORE',             nombre:'Armando Gutierrez Escudo',    rol:'Desarrollador',tl:'Mario Sanchez Vazquez'},
-  {id:'c4',  area:'CORE',             nombre:'Baldomero Olivares Ramirez',  rol:'Desarrollador',tl:'Mario Sanchez Vazquez'},
-  {id:'c5',  area:'CORE',             nombre:'Liliana Gonzalez Gutierrez',  rol:'Desarrollador',tl:'Mario Sanchez Vazquez'},
-  {id:'c6',  area:'CORE',             nombre:'Karen Medina Silva',          rol:'Desarrollador',tl:'Mario Sanchez Vazquez'},
-  {id:'c7',  area:'CORE',             nombre:'Aylenid Aleman Perez',        rol:'Desarrollador',tl:'Mario Sanchez Vazquez'},
-  {id:'c8',  area:'CORE',             nombre:'Silvia Diaz Gomez',           rol:'Desarrollador',tl:'Mario Sanchez Vazquez'},
-  {id:'c9',  area:'CORE',             nombre:'Juan Juarez',                 rol:'Desarrollador',tl:'Mario Sanchez Vazquez'},
-  // WEB
-  {id:'c10', area:'WEB',              nombre:'Mauricio Sanchez Gaspar',     rol:'Lider área',   tl:''},
-  {id:'c11', area:'WEB',              nombre:'Luis Gonzalez Aguilar',       rol:'Desarrollador',tl:'Mauricio Sanchez Gaspar'},
-  {id:'c12', area:'WEB',              nombre:'Luis Alberto Ramirez Lopez',  rol:'Desarrollador',tl:'Mauricio Sanchez Gaspar'},
-  {id:'c13', area:'WEB',              nombre:'Victor Hugo Peralta Garcia',  rol:'Desarrollador',tl:'Mauricio Sanchez Gaspar'},
-  // Ingeniería de Datos
-  {id:'c14', area:'Ingeniería de Datos', nombre:'Ruben Berbena Murillo',          rol:'Lider área',   tl:''},
-  {id:'c15', area:'Ingeniería de Datos', nombre:'Francisco Javier Garcia Perez',  rol:'Desarrollador',tl:'Ruben Berbena Murillo'},
-  {id:'c16', area:'Ingeniería de Datos', nombre:'Victor Fabian Velazquez Zuñiga', rol:'Desarrollador',tl:'Ruben Berbena Murillo'},
-  {id:'c17', area:'Ingeniería de Datos', nombre:'Mario Garcia Meza',              rol:'Desarrollador',tl:'Ruben Berbena Murillo'},
-  {id:'c18', area:'Ingeniería de Datos', nombre:'Camila Aranzuza Meta Montoga',   rol:'Desarrollador',tl:'Ruben Berbena Murillo'},
-  // Infraestructura
-  {id:'c19', area:'Infraestructura',  nombre:'Yoshio Alexis Martinez Lopez', rol:'Lider área',   tl:''},
-  {id:'c20', area:'Infraestructura',  nombre:'Enrique Sandoval Morales',     rol:'Desarrollador',tl:'Yoshio Alexis Martinez Lopez'},
-  {id:'c21', area:'Infraestructura',  nombre:'Oscar Valdez Perez',           rol:'Desarrollador',tl:'Yoshio Alexis Martinez Lopez'},
-  {id:'c22', area:'Infraestructura',  nombre:'Alberto Luna Cedillo',         rol:'Desarrollador',tl:'Yoshio Alexis Martinez Lopez'},
-  {id:'c23', area:'Infraestructura',  nombre:'Laura Angeliza Mantecon Lopez',rol:'Desarrollador',tl:'Yoshio Alexis Martinez Lopez'},
-  // IA
-  {id:'c24', area:'IA',               nombre:'Alan Escudero',                rol:'Lider área',   tl:''},
-  {id:'c25', area:'IA',               nombre:'Antonio Compean Zenon',        rol:'Desarrollador',tl:'Alan Escudero'},
-  {id:'c26', area:'IA',               nombre:'Hector Balan',                 rol:'Desarrollador',tl:'Alan Escudero'},
-  {id:'c27', area:'IA',               nombre:'Andres Sebastian Pined Posada',rol:'UX/UI',        tl:'Alan Escudero'},
-  // Backend
-  {id:'c28', area:'Backend',          nombre:'Sergio Eduardo Dzul Xuluc',    rol:'Lider área',   tl:''},
-  {id:'c29', area:'Backend',          nombre:'Andrii Alexander Garcia Carrillo', rol:'Desarrollador',tl:'Sergio Eduardo Dzul Xuluc'},
-  {id:'c30', area:'Backend',          nombre:'Jose Luis Reyes Esparza',      rol:'Desarrollador',tl:'Sergio Eduardo Dzul Xuluc'},
-  {id:'c31', area:'Backend',          nombre:'Alberto Antonio Portillo',     rol:'Desarrollador',tl:'Sergio Eduardo Dzul Xuluc'},
-  {id:'c32', area:'Backend',          nombre:'Etun Kodeit',                  rol:'Desarrollador',tl:'Sergio Eduardo Dzul Xuluc'},
-  {id:'c33', area:'Backend',          nombre:'Ana Batriz Lechuga de Jesujs', rol:'Desarrollador',tl:'Sergio Eduardo Dzul Xuluc'},
-];
-let catEditId = null;
-
-// Cargar catálogo desde Firebase si existe
-window._catLoaded = false;
-function loadCatalogFromFirebase(data) {
-  if (data && Array.isArray(data.CATALOGO) && data.CATALOGO.length > 0) {
-    CATALOGO = data.CATALOGO;
-  }
-}
-
-function saveCatalogToFirebase() {
-  if (typeof window.saveToFirebase === 'function') {
-    // Guardar catálogo junto con los datos principales
-    if (window._fbDB && window._fbSet && window._fbRef) {
-      window._fbSet(window._fbRef(window._fbDB, 'pmo/CATALOGO'), CATALOGO)
-        .catch(e => console.error('Error guardando catálogo:', e));
-    }
-  }
-}
-
-// Obtener TL de un colaborador por nombre
-function getTLForColaborador(nombre) {
-  const c = CATALOGO.find(x => x.nombre === nombre);
-  return c ? c.tl : '';
-}
-
-// Obtener área de un colaborador por nombre
-function getAreaForColaborador(nombre) {
-  const c = CATALOGO.find(x => x.nombre === nombre);
-  return c ? c.area : '';
-}
-
-// Obtener todos los devs de un TL
-function getDevsForTL(tlNombre) {
-  return CATALOGO.filter(c => c.tl === tlNombre).map(c => c.nombre);
-}
-
-function renderCatalogo() {
-  const q    = (document.getElementById('cat-q')?.value||'').toLowerCase();
-  const fa   = document.getElementById('cat-area')?.value||'';
-  const fr   = document.getElementById('cat-rol')?.value||'';
-
-  // Poblar filtros
-  const areas = [...new Set(CATALOGO.map(c=>c.area).filter(Boolean))].sort();
-  const roles = [...new Set(CATALOGO.map(c=>c.rol).filter(Boolean))].sort();
-  const selA = document.getElementById('cat-area');
-  const selR = document.getElementById('cat-rol');
-  if(selA){const sv=selA.value;selA.innerHTML='<option value="">Todas las áreas</option>'+areas.map(a=>`<option${a===sv?' selected':''}>${a}</option>`).join('');}
-  if(selR){const sv=selR.value;selR.innerHTML='<option value="">Todos los roles</option>'+roles.map(r=>`<option${r===sv?' selected':''}>${r}</option>`).join('');}
-
-  const filtered = CATALOGO.filter(c => {
-    const qOk = !q || c.nombre.toLowerCase().includes(q) || c.area.toLowerCase().includes(q) || c.tl.toLowerCase().includes(q);
-    return qOk && (!fa||c.area===fa) && (!fr||c.rol===fr);
-  });
-
-  // Agrupar por área
-  const byArea = {};
-  filtered.forEach(c => { if(!byArea[c.area]) byArea[c.area]=[]; byArea[c.area].push(c); });
-
-  const el = document.getElementById('cat-content'); if(!el) return;
-  if(!filtered.length){ el.innerHTML='<div class="empty-state"><div class="empty-icon">📒</div><div>Sin resultados</div></div>'; return; }
-
-  el.innerHTML = Object.entries(byArea).sort(([a],[b])=>a.localeCompare(b)).map(([area,cols])=>{
-    const tl = cols.find(c=>c.rol==='Lider área' || c.rol==='Tech Lead');
-    const devs = cols.filter(c=>c !== tl);
-    return `
-    <div style="background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);margin-bottom:1.25rem">
-      <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;background:var(--blue-bg);border-bottom:.5px solid var(--border)">
-        <span style="font-size:20px">🏢</span>
-        <div style="flex:1">
-          <div style="font-size:14px;font-weight:700;color:var(--blue-t)">${area}</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:1px">${cols.length} colaboradores${tl?` · TL: ${tl.nombre}`:''}</div>
-        </div>
-      </div>
-      <div style="padding:12px 16px;display:grid;gap:6px">
-        ${cols.map(c=>`
-          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:${c.rol==='Lider área'||c.rol==='Tech Lead'?'var(--blue-bg)':'var(--surface2)'};border-radius:var(--rs);border:.5px solid var(--border)">
-            <span style="font-size:18px">${c.rol==='Lider área'||c.rol==='Tech Lead'?'👑':'👤'}</span>
-            <div style="flex:1">
-              <div style="font-size:13px;font-weight:600">${c.nombre}</div>
-              <div style="font-size:11px;color:var(--text3)">${c.rol}${c.tl?` · TL: ${c.tl}`:''}</div>
-            </div>
-            <div style="display:flex;gap:4px">
-              <button class="btn btn-ghost btn-sm" onclick="openCatModal('${c.id}')">✏️</button>
-              <button class="btn btn-danger btn-sm" onclick="deleteCatRecord('${c.id}')">🗑️</button>
-            </div>
-          </div>`).join('')}
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function openCatModal(id) {
-  catEditId = id || null;
-  const c = id ? CATALOGO.find(x=>x.id===id) : {};
-  document.getElementById('cat-modal-title').textContent = id ? 'Editar colaborador' : 'Nuevo colaborador';
-  const areas = [...new Set(CATALOGO.map(x=>x.area).filter(Boolean))].sort();
-  const tls   = CATALOGO.filter(x=>x.rol==='Lider área'||x.rol==='Tech Lead').map(x=>x.nombre).sort();
-  const roles = ['Lider área','Tech Lead','Desarrollador','UX/UI','QA','DevOps','Arquitecto'];
-  document.getElementById('cat-modal-body').innerHTML = `<div class="form-grid">
-    <div class="form-group full"><label class="form-label">Nombre completo</label>
-      <input class="form-input" id="cat-f-nombre" value="${c?.nombre||''}" placeholder="Nombre del colaborador"></div>
-    <div class="form-group"><label class="form-label">Área</label>
-      <select class="form-select" id="cat-f-area">
-        <option value="">—</option>
-        ${areas.map(a=>`<option${a===(c?.area||'')?' selected':''}>${a}</option>`).join('')}
-        <option value="__new__">+ Nueva área...</option>
-      </select></div>
-    <div class="form-group"><label class="form-label">Rol</label>
-      <select class="form-select" id="cat-f-rol">
-        <option value="">—</option>
-        ${roles.map(r=>`<option${r===(c?.rol||'')?' selected':''}>${r}</option>`).join('')}
-      </select></div>
-    <div class="form-group full"><label class="form-label">Tech Lead / Lider área (su jefe directo)</label>
-      <select class="form-select" id="cat-f-tl">
-        <option value="">— Sin TL asignado —</option>
-        ${tls.map(t=>`<option${t===(c?.tl||'')?' selected':''}>${t}</option>`).join('')}
-      </select></div>
-  </div>`;
-  document.getElementById('cat-f-area').addEventListener('change', function(){
-    if(this.value==='__new__'){const v=prompt('Nueva área:');if(v){const o=new Option(v,v,true,true);this.insertBefore(o,this.lastElementChild);this.value=v;}else this.value='';}
-  });
-  document.getElementById('ovCat').classList.add('open');
-}
-
-function closeCatModal(){ document.getElementById('ovCat').classList.remove('open'); catEditId=null; }
-
-function saveCatRecord() {
-  const nombre = document.getElementById('cat-f-nombre').value.trim();
-  const area   = document.getElementById('cat-f-area').value.trim();
-  const rol    = document.getElementById('cat-f-rol').value.trim();
-  const tl     = document.getElementById('cat-f-tl').value.trim();
-  if(!nombre){ toast('El nombre es obligatorio','error'); return; }
-  if(catEditId) {
-    const idx = CATALOGO.findIndex(c=>c.id===catEditId);
-    if(idx>-1) CATALOGO[idx] = {...CATALOGO[idx], nombre, area, rol, tl};
-    toast('✅ Colaborador actualizado');
-  } else {
-    CATALOGO.push({ id: 'c'+Date.now(), nombre, area, rol, tl });
-    toast('✅ Colaborador agregado');
-  }
-  closeCatModal();
-  renderCatalogo();
-  saveCatalogToFirebase();
-}
-
-function deleteCatRecord(id) {
-  if(!confirm('¿Eliminar este colaborador del catálogo?')) return;
-  CATALOGO = CATALOGO.filter(c=>c.id!==id);
-  renderCatalogo();
-  saveCatalogToFirebase();
-  toast('🗑️ Eliminado del catálogo');
-}
 </script>
 </body>
 </html>
