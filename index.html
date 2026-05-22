@@ -49,6 +49,11 @@ onValue(pmoRef, (snapshot) => {
   window.pptxFile = data.pptxFile || '';
   window.xlsxFile = data.xlsxFile || '';
 
+  // Cargar catálogo si existe en Firebase
+  if (typeof window.loadCatalogFromFirebase === 'function') {
+    window.loadCatalogFromFirebase(data);
+  }
+
   window.DB.forEach(d => { d._estatus = window.normEstatus(d._estatus); });
   window.deduplicateRDB();
 
@@ -373,6 +378,7 @@ tr:hover td{background:var(--bg)}
     <button class="nav-btn" onclick="goPage('graficos',this)"><span class="nav-icon">📊</span>Gráficos</button>
     <button class="nav-btn" onclick="goPage('riesgos',this)"><span class="nav-icon">⚠️</span>Inventario Riesgos</button>
     <button class="nav-btn" onclick="goPage('historico',this)"><span class="nav-icon">🕐</span>Histórico</button>
+    <button class="nav-btn" onclick="goPage('catalogo',this)"><span class="nav-icon">📒</span>Catálogo</button>
   </nav>
   <div class="sidebar-footer">
     <!-- Indicador Firebase -->
@@ -480,6 +486,7 @@ tr:hover td{background:var(--bg)}
       <select id="f-estatus" onchange="applyFilters()"><option value="">Todos los estatus</option></select>
       <select id="f-pm"      onchange="applyFilters()"><option value="">Todos los PM</option></select>
       <select id="f-resp"    onchange="applyFilters()"><option value="">Todos los Resp. TI</option></select>
+      <select id="f-dev"     onchange="applyFilters()"><option value="">Todos los devs</option></select>
       <select id="f-area"    onchange="applyFilters()"><option value="">Todas las áreas</option></select>
       <select id="f-fase"    onchange="applyFilters()"><option value="">Todas las fases</option></select>
       <button class="btn btn-ghost" onclick="clearFilters()">✕ Limpiar</button>
@@ -503,6 +510,7 @@ tr:hover td{background:var(--bg)}
       <select id="g-estatus" onchange="applyChartFilters()" style="font-size:13px;padding:5px 10px;border:.5px solid var(--border2);border-radius:var(--rs);background:var(--surface);height:32px"><option value="">Todos los estatus</option></select>
       <select id="g-pm"      onchange="applyChartFilters()" style="font-size:13px;padding:5px 10px;border:.5px solid var(--border2);border-radius:var(--rs);background:var(--surface);height:32px"><option value="">Todos los PM</option></select>
       <select id="g-resp"    onchange="applyChartFilters()" style="font-size:13px;padding:5px 10px;border:.5px solid var(--border2);border-radius:var(--rs);background:var(--surface);height:32px"><option value="">Todos los Resp. TI</option></select>
+      <select id="g-dev"     onchange="applyChartFilters()" style="font-size:13px;padding:5px 10px;border:.5px solid var(--border2);border-radius:var(--rs);background:var(--surface);height:32px"><option value="">Todos los devs</option></select>
       <select id="g-area"    onchange="applyChartFilters()" style="font-size:13px;padding:5px 10px;border:.5px solid var(--border2);border-radius:var(--rs);background:var(--surface);height:32px"><option value="">Todas las áreas</option></select>
       <button onclick="clearChartFilters()" style="padding:5px 12px;background:none;border:.5px solid var(--border2);border-radius:var(--rs);font-size:12px;cursor:pointer;color:var(--text3);height:32px">✕ Limpiar</button>
       <span id="g-count" style="font-size:12px;color:var(--text2);font-weight:600;margin-left:4px"></span>
@@ -520,8 +528,9 @@ tr:hover td{background:var(--bg)}
         <div class="chart-wrap" style="height:260px"><canvas id="ch-pm-activos"></canvas></div>
       </div>
       <div class="chart-card full"><div class="chart-title">Por Responsable TI <span class="chart-total" id="ct-resp">—</span></div><div class="chart-wrap" style="height:230px"><canvas id="ch-resp"></canvas></div></div>
+      <div class="chart-card full"><div class="chart-title">Por Desarrollador <span class="chart-total" id="ct-dev">—</span></div><div class="chart-wrap" style="height:230px"><canvas id="ch-dev"></canvas></div></div>
       <div class="chart-card"><div class="chart-title">Por prioridad <span class="chart-total" id="ct-prio">—</span></div><div class="legend-row" id="leg-prio"></div><div class="chart-wrap" style="height:200px"><canvas id="ch-prio"></canvas></div></div>
-      <div class="chart-card"><div class="chart-title">Riesgos por impacto <span class="chart-total" id="ct-riesgo">—</span></div><div class="legend-row" id="leg-riesgo"></div><div class="chart-wrap" style="height:200px"><canvas id="ch-riesgo"></canvas></div></div>
+      <div class="chart-card"><div class="chart-title">Riesgos por estatus <span class="chart-total" id="ct-riesgo">—</span></div><div class="legend-row" id="leg-riesgo"></div><div class="chart-wrap" style="height:200px"><canvas id="ch-riesgo"></canvas></div></div>
       <div class="chart-card full">
         <div class="chart-title">Latencia por mes y área TI
           <div style="display:flex;gap:8px;align-items:center">
@@ -575,6 +584,24 @@ tr:hover td{background:var(--bg)}
       <div class="comp-grid" id="compPanel"></div>
       <div style="margin-top:1.5rem" id="compDiff"></div>
     </div>
+  </div>
+
+  <!-- CATÁLOGO -->
+  <div class="page" id="page-catalogo">
+    <div class="page-header">
+      <div><div class="page-title">Catálogo</div><div class="page-sub">Directorio de áreas, colaboradores y roles</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="openCatModal()">+ Agregar colaborador</button>
+      </div>
+    </div>
+    <!-- Filtros catálogo -->
+    <div class="filters-bar">
+      <input type="text" id="cat-q" placeholder="🔍 Buscar colaborador..." oninput="renderCatalogo()">
+      <select id="cat-area" onchange="renderCatalogo()"><option value="">Todas las áreas</option></select>
+      <select id="cat-rol"  onchange="renderCatalogo()"><option value="">Todos los roles</option></select>
+      <button class="btn btn-ghost" onclick="document.getElementById('cat-q').value='';document.getElementById('cat-area').value='';document.getElementById('cat-rol').value='';renderCatalogo()">✕ Limpiar</button>
+    </div>
+    <div id="cat-content"></div>
   </div>
 
 </main>
@@ -757,6 +784,15 @@ tr:hover td{background:var(--bg)}
 
 <div class="toast" id="toast"></div>
 
+<!-- MODAL CATÁLOGO -->
+<div class="overlay" id="ovCat">
+  <div class="modal" style="width:560px">
+    <div class="modal-header"><span class="modal-title" id="cat-modal-title">Nuevo colaborador</span><button class="modal-close" onclick="closeCatModal()">×</button></div>
+    <div class="modal-body" id="cat-modal-body"></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeCatModal()">Cancelar</button><button class="btn btn-primary" onclick="saveCatRecord()">Guardar</button></div>
+  </div>
+</div>
+
 <script>
 'use strict';
 // ══════════════════════════════════════════
@@ -799,6 +835,7 @@ function goPage(name, btn) {
   if (name === 'graficos' && DB.length)  renderCharts();
   if (name === 'riesgos')                { populateRFilters(); applyRFilters(); }
   if (name === 'historico')              renderSnaps();
+  if (name === 'catalogo')              renderCatalogo();
 }
 
 // ══════════════════════════════════════════
@@ -1002,6 +1039,7 @@ const EXCEL_MAP = {
   _pm:         ['pm','p.m.','project manager','gestor','lider proyecto','líder proyecto','lider de proyecto','líder de proyecto','gerente proyecto','gerente de proyecto','responsable proyecto','responsable del proyecto','pm asignado','pm del proyecto'],
   _tl:         ['tl','t.l.','tech lead','technical lead','lider tecnico','líder técnico','lider técnico','líder tecnico','lider tech','líder tech','responsable técnico','responsable tecnico','lead técnico','lead tecnico','tl asignado'],
   _resp:       ['responsable ti','responsable de ti','owner ti','lider ti','líder ti'],
+  _dev:        ['desarrollador','developer','dev','programador','ingeniero','asignado a','asignado','assigned to','recurso'],
   _area:       ['área','area','solicitante','unidad','depto','departamento','area ti','área ti'],
   _prioridad:  ['prioridad','priorización','priorizacion','priority','urgencia'],
   _avance:     ['avance','avance %','avance%','progreso','% avance','porcentaje'],
@@ -1154,7 +1192,8 @@ async function loadExcel(buffer, filename) {
       )];
       console.warn('⚠️ Estatus no reconocidos:', unrecognizedVals);
       window._lastUnrecognized = unrecognizedVals;
-      setTimeout(() => showUnrecognizedBanner(unrecognizedVals), 800);
+      // Banner desactivado — solo log en consola para no molestar al usuario
+      // setTimeout(() => showUnrecognizedBanner(unrecognizedVals), 800);
     } else {
       window._lastUnrecognized = [];
     }
@@ -1480,6 +1519,7 @@ const COLS = [
   {k:'_estatus',   l:'Estatus'},
   {k:'_pm',        l:'PM'},
   {k:'_resp',      l:'Responsable TI'},
+  {k:'_dev',       l:'Desarrollador'},
   {k:'_area',      l:'Área'},
   {k:'_prioridad', l:'Prioridad'},
   {k:'_avance',    l:'Avance %'},
@@ -1502,10 +1542,11 @@ const SEM=[
 function normEstatus(v) {
   if (!v || v === '—' || v === '' || v === '-' || v === 'N/A' || v === 'n/a') return '—';
 
-  // Limpiar: minúsculas, sin acentos, sin guiones/puntos/paréntesis, espacios normalizados
+  // Limpiar: minúsculas, sin acentos, sin guiones/puntos/paréntesis/bullets/emojis, espacios normalizados
   const s = v.trim().toLowerCase()
               .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-              .replace(/[_\.\-\(\)]/g,' ')
+              .replace(/[_\.\-\(\)●•◉◎○⚫⚪🔴🟡🟢🟠⚠️✅]/g,' ')
+              .replace(/[^\w\s]/g,' ')
               .replace(/\s+/g,' ').trim();
 
   // 1. Match exacto contra los labels del semáforo (sin acentos)
@@ -1541,11 +1582,12 @@ function normTipo(v) {
   if (!v || v === '—' || v === '') return 'Requerimiento';
   const s = v.trim().toLowerCase()
               .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-              .replace(/\s+/g,' ');
+              // quitar caracteres especiales como bullets, emojis, etc.
+              .replace(/[^\w\s]/g,' ')
+              .replace(/\s+/g,' ').trim();
   if (/proy/.test(s))        return 'Proyecto';
   if (/épica|epica|epic/.test(s)) return 'Épica';
   if (/requ|req/.test(s))   return 'Requerimiento';
-  // Si no matchea nada conocido, defaultear a Requerimiento
   return 'Requerimiento';
 }
 
@@ -1574,7 +1616,7 @@ function rstatBadge(v)  { const s=(v||'').toLowerCase(); return /abierto|activo/
 function uniqVals(key) { return [...new Set(DB.map(d=>d[key]).filter(v=>v&&v!=='—'))].sort(); }
 
 function populateFilters() {
-  [['f-tipo','_tipo','Todos los tipos'],['f-pm','_pm','Todos los PM'],['f-resp','_resp','Todos los Resp. TI'],['f-area','_area','Todas las áreas'],['f-fase','_fase','Todas las fases']]
+  [['f-tipo','_tipo','Todos los tipos'],['f-pm','_pm','Todos los PM'],['f-resp','_resp','Todos los Resp. TI'],['f-dev','_dev','Todos los devs'],['f-area','_area','Todas las áreas'],['f-fase','_fase','Todas las fases']]
   .forEach(([id,key,ph]) => {
     const sel=document.getElementById(id);if(!sel)return; const sv=sel.value;
     sel.innerHTML=`<option value="">${ph}</option>`+uniqVals(key).map(v=>`<option${v===sv?' selected':''}>${v}</option>`).join('');
@@ -1587,7 +1629,7 @@ function populateFilters() {
 
 function clearFilters() {
   document.getElementById('f-q').value='';
-  ['f-tipo','f-estatus','f-pm','f-resp','f-area','f-fase'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['f-tipo','f-estatus','f-pm','f-resp','f-dev','f-area','f-fase'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   applyFilters();
 }
 
@@ -1598,12 +1640,13 @@ function applyFilters() {
   const fe   = document.getElementById('f-estatus').value;
   const fp   = document.getElementById('f-pm').value;
   const fresp= document.getElementById('f-resp')?.value||'';
+  const fdev = document.getElementById('f-dev')?.value||'';
   const fa   = document.getElementById('f-area').value;
   const ff   = document.getElementById('f-fase')?.value||'';
   filteredDB = DB.filter(d => {
     const eLabel = normEstatus(d._estatus);
     const eOk = !fe || eLabel === fe;
-    return (!ft||d._tipo===ft)&&eOk&&(!fp||d._pm===fp)&&(!fresp||d._resp===fresp)&&(!fa||d._area===fa)&&(!ff||d._fase===ff)&&
+    return (!ft||d._tipo===ft)&&eOk&&(!fp||d._pm===fp)&&(!fresp||d._resp===fresp)&&(!fdev||d._dev===fdev)&&(!fa||d._area===fa)&&(!ff||d._fase===ff)&&
            (!q||COLS.some(cx=>String(d[cx.k]||'').toLowerCase().includes(q)));
   });
   if (sortCol!==null) {
@@ -1660,6 +1703,7 @@ function openModal(idx) {
     {k:'_fase',     l:'Fase',          type:'sel', opts:['Planeación','Diseño','Desarrollo','Prueba','Implementación','Ejecución','Cierre']},
     {k:'_pm',       l:'PM',            type:'sel', opts:uniqVals('_pm')},
     {k:'_resp',     l:'Responsable TI',type:'sel', opts:uniqVals('_resp')},
+    {k:'_dev',      l:'Desarrollador', type:'sel', opts:uniqVals('_dev')},
     {k:'_area',     l:'Área',          type:'sel', opts:uniqVals('_area')},
     {k:'_prioridad',l:'Prioridad',     type:'sel', opts:['Alta','Media','Baja']},
     {k:'_avance',   l:'Avance %'},
@@ -1775,6 +1819,9 @@ function applyOverrides(arr) {
 function startDrivePoll() {
   if (_pollTimer) clearInterval(_pollTimer);
   _pollTimer = setInterval(async () => {
+    // Si Firebase está activo y tiene datos, NO hacer poll de Drive
+    // Firebase ES la fuente de verdad bidireccional
+    if (window._fbInitialized && DB.length > 0) return;
     const cfg = getSyncConfig();
     if (!cfg.excelUrl && !cfg.pptxUrl) return;
     await loadFromUrls(cfg, true); // silent=true: no toast
@@ -1983,7 +2030,29 @@ function renderCharts(){
   buildBar('ch-pm','ct-pm',countBy('_pm'));
   buildPmActivos();
   buildBar('ch-resp','ct-resp',countBy('_resp'));
+  buildBar('ch-dev','ct-dev',countBy('_dev'));
   buildDona('ch-prio','leg-prio','ct-prio',countBy('_prioridad'));
+
+  // Riesgos por estatus (no por impacto)
+  const RSTAT_COLORS = {'Abierto':'#f44336','En proceso':'#ffc107','Cerrado':'#4caf50','Mitigado':'#607d8b'};
+  const rStatCnt = {};
+  RDB.forEach(r => { const s=r.estatus||'Abierto'; rStatCnt[s]=(rStatCnt[s]||0)+1; });
+  const rStatData = Object.entries(rStatCnt).sort((a,b)=>b[1]-a[1]);
+  const rStatCols = rStatData.map(([l])=>RSTAT_COLORS[l]||'#9e9e9e');
+  const legR = document.getElementById('leg-riesgo');
+  if (legR) legR.innerHTML = rStatData.map(([l,c],i)=>`<span class="leg-item"><span class="leg-dot" style="background:${rStatCols[i]}"></span>${l} (${c})</span>`).join('');
+  const totR = rStatData.reduce((s,e)=>s+e[1],0);
+  const ctR = document.getElementById('ct-riesgo');
+  if (ctR) ctR.textContent = 'Total: ' + totR;
+  destroyChart('ch-riesgo');
+  const canvR = document.getElementById('ch-riesgo');
+  if (canvR && rStatData.length) charts['ch-riesgo'] = new Chart(canvR, {
+    type:'doughnut',
+    data:{ labels: rStatData.map(e=>e[0]), datasets:[{ data: rStatData.map(e=>e[1]), backgroundColor: rStatCols, borderWidth:2, borderColor:'#fff' }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false },
+      tooltip:{ callbacks:{ label: c=>`${c.label}: ${c.parsed} (${totR?Math.round(c.parsed/totR*100):0}%)` }}}}
+  });
+
   buildLatencia();
 }
 
@@ -3376,7 +3445,7 @@ let chartDB = []; // subconjunto de DB según filtros de gráficos
 
 function populateChartFilters() {
   const uniq = (key) => [...new Set(DB.map(d=>d[key]).filter(v=>v&&v!=='—'))].sort();
-  [['g-tipo','_tipo','Todos los tipos'],['g-pm','_pm','Todos los PM'],['g-resp','_resp','Todos los Resp. TI'],['g-area','_area','Todas las áreas']]
+  [['g-tipo','_tipo','Todos los tipos'],['g-pm','_pm','Todos los PM'],['g-resp','_resp','Todos los Resp. TI'],['g-dev','_dev','Todos los devs'],['g-area','_area','Todas las áreas']]
   .forEach(([id,key,ph]) => {
     const sel=document.getElementById(id); if(!sel) return;
     const sv=sel.value;
@@ -3394,13 +3463,14 @@ function applyChartFilters() {
   const fe   = document.getElementById('g-estatus')?.value||'';
   const fp   = document.getElementById('g-pm')?.value||'';
   const fresp= document.getElementById('g-resp')?.value||'';
+  const fdev = document.getElementById('g-dev')?.value||'';
   const fa   = document.getElementById('g-area')?.value||'';
   chartDB = DB.filter(d => {
     const eLabel = normEstatus(d._estatus);
-    return (!ft||d._tipo===ft)&&(!fe||eLabel===fe)&&(!fp||d._pm===fp)&&(!fresp||d._resp===fresp)&&(!fa||d._area===fa);
+    return (!ft||d._tipo===ft)&&(!fe||eLabel===fe)&&(!fp||d._pm===fp)&&(!fresp||d._resp===fresp)&&(!fdev||d._dev===fdev)&&(!fa||d._area===fa);
   });
   const cnt = document.getElementById('g-count');
-  const hasFilter = ft||fe||fp||fresp||fa;
+  const hasFilter = ft||fe||fp||fresp||fdev||fa;
   if(cnt) cnt.textContent = hasFilter ? `${chartDB.length} de ${DB.length} registros filtrados` : '';
   const sub = document.getElementById('graficos-sub');
   if(sub) sub.textContent = hasFilter ? `Mostrando ${chartDB.length} de ${DB.length} iniciativas según filtros` : 'Análisis visual del portafolio';
@@ -3408,7 +3478,7 @@ function applyChartFilters() {
 }
 
 function clearChartFilters() {
-  ['g-tipo','g-estatus','g-pm','g-resp','g-area'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['g-tipo','g-estatus','g-pm','g-resp','g-dev','g-area'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   applyChartFilters();
 }
 
@@ -3416,7 +3486,7 @@ function clearChartFilters() {
 function renderCharts() {
   populateChartFilters();
   chartDB = [...DB];
-  ['g-tipo','g-estatus','g-pm','g-resp','g-area'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['g-tipo','g-estatus','g-pm','g-resp','g-dev','g-area'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const cnt=document.getElementById('g-count');if(cnt)cnt.textContent='';
   const sub=document.getElementById('graficos-sub');if(sub)sub.textContent='Análisis visual del portafolio';
   renderChartsFromData(DB);
@@ -3449,24 +3519,25 @@ function renderChartsFromData(data) {
   buildBar('ch-pm','ct-pm', countByData('_pm', data));
   buildPmActivosFromData(data);
   buildBar('ch-resp','ct-resp', countByData('_resp', data));
+  buildBar('ch-dev','ct-dev', countByData('_dev', data));
   buildDona('ch-prio','leg-prio','ct-prio', countByData('_prioridad', data));
-  // ── Riesgos por impacto (filtrados a las iniciativas visibles) ──────────
+  // ── Riesgos por ESTATUS (no por impacto) ──────────────────────────────────
   const nombresData = new Set(data.map(d=>d._nombre).filter(Boolean));
   const rdbVis = RDB.filter(r => nombresData.has(r._proyecto));
-  const riesgoCnt = {};
-  rdbVis.forEach(r => { const v=(r.impacto||'Sin dato').trim(); riesgoCnt[v]=(riesgoCnt[v]||0)+1; });
-  const riesgoData = Object.entries(riesgoCnt).sort((a,b)=>b[1]-a[1]);
-  const RCOL = {'muy alto':'#b71c1c','alto':'#f44336','medio':'#ff9800','bajo':'#4caf50','muy bajo':'#81c784'};
-  const rCols = riesgoData.map(([l])=>RCOL[l.toLowerCase()]||'#9e9e9e');
+  const RSTAT_COLORS = {'Abierto':'#f44336','En proceso':'#ffc107','Cerrado':'#4caf50','Mitigado':'#607d8b'};
+  const rStatCnt2 = {};
+  rdbVis.forEach(r => { const s=(r.estatus||'Abierto').trim(); rStatCnt2[s]=(rStatCnt2[s]||0)+1; });
+  const rStatData2 = Object.entries(rStatCnt2).sort((a,b)=>b[1]-a[1]);
+  const rStatCols2 = rStatData2.map(([l])=>RSTAT_COLORS[l]||'#9e9e9e');
   const rTot  = rdbVis.length;
   const ctR = document.getElementById('ct-riesgo'); if(ctR) ctR.textContent='Total: '+rTot;
   const legR = document.getElementById('leg-riesgo');
-  if(legR) legR.innerHTML = riesgoData.map(([l,c],i)=>`<span class="leg-item"><span class="leg-dot" style="background:${rCols[i]};border-radius:50%"></span>${l} (${c})</span>`).join('');
+  if(legR) legR.innerHTML = rStatData2.map(([l,c],i)=>`<span class="leg-item"><span class="leg-dot" style="background:${rStatCols2[i]};border-radius:50%"></span>${l} (${c})</span>`).join('');
   destroyChart('ch-riesgo');
   const canvR = document.getElementById('ch-riesgo');
   if(canvR && rTot>0) {
     charts['ch-riesgo'] = new Chart(canvR,{type:'doughnut',
-      data:{labels:riesgoData.map(e=>e[0]),datasets:[{data:riesgoData.map(e=>e[1]),backgroundColor:rCols,borderWidth:2,borderColor:'#fff'}]},
+      data:{labels:rStatData2.map(e=>e[0]),datasets:[{data:rStatData2.map(e=>e[1]),backgroundColor:rStatCols2,borderWidth:2,borderColor:'#fff'}]},
       options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
         tooltip:{callbacks:{label:c=>`${c.label}: ${c.parsed} (${rTot?Math.round(c.parsed/rTot*100):0}%)`}}}}});
   } else if(canvR) {
@@ -3851,10 +3922,10 @@ async function _buildChartsPngFromData(data) {
 
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
-    ['ovData','ovDel','ovRiesgo','ovRDel','ovSync','ovExport'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('open');});
+    ['ovData','ovDel','ovRiesgo','ovRDel','ovSync','ovExport','ovCat'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('open');});
   }
 });
-['ovData','ovDel','ovRiesgo','ovRDel','ovSync','ovExport'].forEach(id=>{
+['ovData','ovDel','ovRiesgo','ovRDel','ovSync','ovExport','ovCat'].forEach(id=>{
   const el=document.getElementById(id);if(!el)return;
   el.addEventListener('click',e=>{if(e.target===e.currentTarget)e.target.classList.remove('open');});
 });
@@ -3865,6 +3936,206 @@ window.deduplicateRDB    = deduplicateRDB;
 window.restoreUIFromData = restoreUIFromData;
 window.refreshAllViews   = refreshAllViews;
 window.toast             = toast;
+window.loadCatalogFromFirebase = loadCatalogFromFirebase;
+
+// ══════════════════════════════════════════
+// CATÁLOGO DE COLABORADORES
+// ══════════════════════════════════════════
+// Estado del catálogo — precargado con los datos del Excel
+let CATALOGO = [
+  // CORE
+  {id:'c1',  area:'CORE',             nombre:'Mario Sanchez Vazquez',       rol:'Lider área',   tl:''},
+  {id:'c2',  area:'CORE',             nombre:'Moises Vazquez Sanches',      rol:'Desarrollador',tl:'Mario Sanchez Vazquez'},
+  {id:'c3',  area:'CORE',             nombre:'Armando Gutierrez Escudo',    rol:'Desarrollador',tl:'Mario Sanchez Vazquez'},
+  {id:'c4',  area:'CORE',             nombre:'Baldomero Olivares Ramirez',  rol:'Desarrollador',tl:'Mario Sanchez Vazquez'},
+  {id:'c5',  area:'CORE',             nombre:'Liliana Gonzalez Gutierrez',  rol:'Desarrollador',tl:'Mario Sanchez Vazquez'},
+  {id:'c6',  area:'CORE',             nombre:'Karen Medina Silva',          rol:'Desarrollador',tl:'Mario Sanchez Vazquez'},
+  {id:'c7',  area:'CORE',             nombre:'Aylenid Aleman Perez',        rol:'Desarrollador',tl:'Mario Sanchez Vazquez'},
+  {id:'c8',  area:'CORE',             nombre:'Silvia Diaz Gomez',           rol:'Desarrollador',tl:'Mario Sanchez Vazquez'},
+  {id:'c9',  area:'CORE',             nombre:'Juan Juarez',                 rol:'Desarrollador',tl:'Mario Sanchez Vazquez'},
+  // WEB
+  {id:'c10', area:'WEB',              nombre:'Mauricio Sanchez Gaspar',     rol:'Lider área',   tl:''},
+  {id:'c11', area:'WEB',              nombre:'Luis Gonzalez Aguilar',       rol:'Desarrollador',tl:'Mauricio Sanchez Gaspar'},
+  {id:'c12', area:'WEB',              nombre:'Luis Alberto Ramirez Lopez',  rol:'Desarrollador',tl:'Mauricio Sanchez Gaspar'},
+  {id:'c13', area:'WEB',              nombre:'Victor Hugo Peralta Garcia',  rol:'Desarrollador',tl:'Mauricio Sanchez Gaspar'},
+  // Ingeniería de Datos
+  {id:'c14', area:'Ingeniería de Datos', nombre:'Ruben Berbena Murillo',          rol:'Lider área',   tl:''},
+  {id:'c15', area:'Ingeniería de Datos', nombre:'Francisco Javier Garcia Perez',  rol:'Desarrollador',tl:'Ruben Berbena Murillo'},
+  {id:'c16', area:'Ingeniería de Datos', nombre:'Victor Fabian Velazquez Zuñiga', rol:'Desarrollador',tl:'Ruben Berbena Murillo'},
+  {id:'c17', area:'Ingeniería de Datos', nombre:'Mario Garcia Meza',              rol:'Desarrollador',tl:'Ruben Berbena Murillo'},
+  {id:'c18', area:'Ingeniería de Datos', nombre:'Camila Aranzuza Meta Montoga',   rol:'Desarrollador',tl:'Ruben Berbena Murillo'},
+  // Infraestructura
+  {id:'c19', area:'Infraestructura',  nombre:'Yoshio Alexis Martinez Lopez', rol:'Lider área',   tl:''},
+  {id:'c20', area:'Infraestructura',  nombre:'Enrique Sandoval Morales',     rol:'Desarrollador',tl:'Yoshio Alexis Martinez Lopez'},
+  {id:'c21', area:'Infraestructura',  nombre:'Oscar Valdez Perez',           rol:'Desarrollador',tl:'Yoshio Alexis Martinez Lopez'},
+  {id:'c22', area:'Infraestructura',  nombre:'Alberto Luna Cedillo',         rol:'Desarrollador',tl:'Yoshio Alexis Martinez Lopez'},
+  {id:'c23', area:'Infraestructura',  nombre:'Laura Angeliza Mantecon Lopez',rol:'Desarrollador',tl:'Yoshio Alexis Martinez Lopez'},
+  // IA
+  {id:'c24', area:'IA',               nombre:'Alan Escudero',                rol:'Lider área',   tl:''},
+  {id:'c25', area:'IA',               nombre:'Antonio Compean Zenon',        rol:'Desarrollador',tl:'Alan Escudero'},
+  {id:'c26', area:'IA',               nombre:'Hector Balan',                 rol:'Desarrollador',tl:'Alan Escudero'},
+  {id:'c27', area:'IA',               nombre:'Andres Sebastian Pined Posada',rol:'UX/UI',        tl:'Alan Escudero'},
+  // Backend
+  {id:'c28', area:'Backend',          nombre:'Sergio Eduardo Dzul Xuluc',    rol:'Lider área',   tl:''},
+  {id:'c29', area:'Backend',          nombre:'Andrii Alexander Garcia Carrillo', rol:'Desarrollador',tl:'Sergio Eduardo Dzul Xuluc'},
+  {id:'c30', area:'Backend',          nombre:'Jose Luis Reyes Esparza',      rol:'Desarrollador',tl:'Sergio Eduardo Dzul Xuluc'},
+  {id:'c31', area:'Backend',          nombre:'Alberto Antonio Portillo',     rol:'Desarrollador',tl:'Sergio Eduardo Dzul Xuluc'},
+  {id:'c32', area:'Backend',          nombre:'Etun Kodeit',                  rol:'Desarrollador',tl:'Sergio Eduardo Dzul Xuluc'},
+  {id:'c33', area:'Backend',          nombre:'Ana Batriz Lechuga de Jesujs', rol:'Desarrollador',tl:'Sergio Eduardo Dzul Xuluc'},
+];
+let catEditId = null;
+
+// Cargar catálogo desde Firebase si existe
+window._catLoaded = false;
+function loadCatalogFromFirebase(data) {
+  if (data && Array.isArray(data.CATALOGO) && data.CATALOGO.length > 0) {
+    CATALOGO = data.CATALOGO;
+  }
+}
+
+function saveCatalogToFirebase() {
+  if (typeof window.saveToFirebase === 'function') {
+    // Guardar catálogo junto con los datos principales
+    if (window._fbDB && window._fbSet && window._fbRef) {
+      window._fbSet(window._fbRef(window._fbDB, 'pmo/CATALOGO'), CATALOGO)
+        .catch(e => console.error('Error guardando catálogo:', e));
+    }
+  }
+}
+
+// Obtener TL de un colaborador por nombre
+function getTLForColaborador(nombre) {
+  const c = CATALOGO.find(x => x.nombre === nombre);
+  return c ? c.tl : '';
+}
+
+// Obtener área de un colaborador por nombre
+function getAreaForColaborador(nombre) {
+  const c = CATALOGO.find(x => x.nombre === nombre);
+  return c ? c.area : '';
+}
+
+// Obtener todos los devs de un TL
+function getDevsForTL(tlNombre) {
+  return CATALOGO.filter(c => c.tl === tlNombre).map(c => c.nombre);
+}
+
+function renderCatalogo() {
+  const q    = (document.getElementById('cat-q')?.value||'').toLowerCase();
+  const fa   = document.getElementById('cat-area')?.value||'';
+  const fr   = document.getElementById('cat-rol')?.value||'';
+
+  // Poblar filtros
+  const areas = [...new Set(CATALOGO.map(c=>c.area).filter(Boolean))].sort();
+  const roles = [...new Set(CATALOGO.map(c=>c.rol).filter(Boolean))].sort();
+  const selA = document.getElementById('cat-area');
+  const selR = document.getElementById('cat-rol');
+  if(selA){const sv=selA.value;selA.innerHTML='<option value="">Todas las áreas</option>'+areas.map(a=>`<option${a===sv?' selected':''}>${a}</option>`).join('');}
+  if(selR){const sv=selR.value;selR.innerHTML='<option value="">Todos los roles</option>'+roles.map(r=>`<option${r===sv?' selected':''}>${r}</option>`).join('');}
+
+  const filtered = CATALOGO.filter(c => {
+    const qOk = !q || c.nombre.toLowerCase().includes(q) || c.area.toLowerCase().includes(q) || c.tl.toLowerCase().includes(q);
+    return qOk && (!fa||c.area===fa) && (!fr||c.rol===fr);
+  });
+
+  // Agrupar por área
+  const byArea = {};
+  filtered.forEach(c => { if(!byArea[c.area]) byArea[c.area]=[]; byArea[c.area].push(c); });
+
+  const el = document.getElementById('cat-content'); if(!el) return;
+  if(!filtered.length){ el.innerHTML='<div class="empty-state"><div class="empty-icon">📒</div><div>Sin resultados</div></div>'; return; }
+
+  el.innerHTML = Object.entries(byArea).sort(([a],[b])=>a.localeCompare(b)).map(([area,cols])=>{
+    const tl = cols.find(c=>c.rol==='Lider área' || c.rol==='Tech Lead');
+    const devs = cols.filter(c=>c !== tl);
+    return `
+    <div style="background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);margin-bottom:1.25rem">
+      <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;background:var(--blue-bg);border-bottom:.5px solid var(--border)">
+        <span style="font-size:20px">🏢</span>
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:700;color:var(--blue-t)">${area}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:1px">${cols.length} colaboradores${tl?` · TL: ${tl.nombre}`:''}</div>
+        </div>
+      </div>
+      <div style="padding:12px 16px;display:grid;gap:6px">
+        ${cols.map(c=>`
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:${c.rol==='Lider área'||c.rol==='Tech Lead'?'var(--blue-bg)':'var(--surface2)'};border-radius:var(--rs);border:.5px solid var(--border)">
+            <span style="font-size:18px">${c.rol==='Lider área'||c.rol==='Tech Lead'?'👑':'👤'}</span>
+            <div style="flex:1">
+              <div style="font-size:13px;font-weight:600">${c.nombre}</div>
+              <div style="font-size:11px;color:var(--text3)">${c.rol}${c.tl?` · TL: ${c.tl}`:''}</div>
+            </div>
+            <div style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openCatModal('${c.id}')">✏️</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteCatRecord('${c.id}')">🗑️</button>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openCatModal(id) {
+  catEditId = id || null;
+  const c = id ? CATALOGO.find(x=>x.id===id) : {};
+  document.getElementById('cat-modal-title').textContent = id ? 'Editar colaborador' : 'Nuevo colaborador';
+  const areas = [...new Set(CATALOGO.map(x=>x.area).filter(Boolean))].sort();
+  const tls   = CATALOGO.filter(x=>x.rol==='Lider área'||x.rol==='Tech Lead').map(x=>x.nombre).sort();
+  const roles = ['Lider área','Tech Lead','Desarrollador','UX/UI','QA','DevOps','Arquitecto'];
+  document.getElementById('cat-modal-body').innerHTML = `<div class="form-grid">
+    <div class="form-group full"><label class="form-label">Nombre completo</label>
+      <input class="form-input" id="cat-f-nombre" value="${c?.nombre||''}" placeholder="Nombre del colaborador"></div>
+    <div class="form-group"><label class="form-label">Área</label>
+      <select class="form-select" id="cat-f-area">
+        <option value="">—</option>
+        ${areas.map(a=>`<option${a===(c?.area||'')?' selected':''}>${a}</option>`).join('')}
+        <option value="__new__">+ Nueva área...</option>
+      </select></div>
+    <div class="form-group"><label class="form-label">Rol</label>
+      <select class="form-select" id="cat-f-rol">
+        <option value="">—</option>
+        ${roles.map(r=>`<option${r===(c?.rol||'')?' selected':''}>${r}</option>`).join('')}
+      </select></div>
+    <div class="form-group full"><label class="form-label">Tech Lead / Lider área (su jefe directo)</label>
+      <select class="form-select" id="cat-f-tl">
+        <option value="">— Sin TL asignado —</option>
+        ${tls.map(t=>`<option${t===(c?.tl||'')?' selected':''}>${t}</option>`).join('')}
+      </select></div>
+  </div>`;
+  document.getElementById('cat-f-area').addEventListener('change', function(){
+    if(this.value==='__new__'){const v=prompt('Nueva área:');if(v){const o=new Option(v,v,true,true);this.insertBefore(o,this.lastElementChild);this.value=v;}else this.value='';}
+  });
+  document.getElementById('ovCat').classList.add('open');
+}
+
+function closeCatModal(){ document.getElementById('ovCat').classList.remove('open'); catEditId=null; }
+
+function saveCatRecord() {
+  const nombre = document.getElementById('cat-f-nombre').value.trim();
+  const area   = document.getElementById('cat-f-area').value.trim();
+  const rol    = document.getElementById('cat-f-rol').value.trim();
+  const tl     = document.getElementById('cat-f-tl').value.trim();
+  if(!nombre){ toast('El nombre es obligatorio','error'); return; }
+  if(catEditId) {
+    const idx = CATALOGO.findIndex(c=>c.id===catEditId);
+    if(idx>-1) CATALOGO[idx] = {...CATALOGO[idx], nombre, area, rol, tl};
+    toast('✅ Colaborador actualizado');
+  } else {
+    CATALOGO.push({ id: 'c'+Date.now(), nombre, area, rol, tl });
+    toast('✅ Colaborador agregado');
+  }
+  closeCatModal();
+  renderCatalogo();
+  saveCatalogToFirebase();
+}
+
+function deleteCatRecord(id) {
+  if(!confirm('¿Eliminar este colaborador del catálogo?')) return;
+  CATALOGO = CATALOGO.filter(c=>c.id!==id);
+  renderCatalogo();
+  saveCatalogToFirebase();
+  toast('🗑️ Eliminado del catálogo');
+}
 </script>
 </body>
 </html>
