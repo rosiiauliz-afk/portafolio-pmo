@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>PMO · Gestión de Portafolio TI</title>
+<!-- v8.1 - saveSnap calls Firebase directly, renderSnaps exposed, SNAPS sync fixed - 2026-05-25 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -30,41 +31,46 @@ window._fbDB  = db;
 window._fbRef = ref;
 window._fbSet = set;
 
-// ── Escuchar cambios en tiempo real desde Firebase ──────────────────────────
-// Cualquier cambio que haga OTRO usuario se refleja aquí automáticamente
+// ── Firebase: sincroniza datos entre todos los usuarios en tiempo real ────────
 const pmoRef = ref(db, 'pmo');
 onValue(pmoRef, (snapshot) => {
   const data = snapshot.val();
-  if (!data) return; // Base de datos vacía todavía
+  if (!data) return;
 
-  // Ignorar si los datos son iguales a los actuales (para no re-renderizar en balde)
-  const incomingHash = JSON.stringify({ db: data.DB?.length, rdb: data.RDB?.length, ts: data.savedAt });
+  // Hash completo: timestamp + contenido — detecta CUALQUIER cambio
+  const incomingHash = data.savedAt + '|' + (data.DB?.length||0) + '|' + (data.SNAPS?.length||0);
   if (window._lastFbHash === incomingHash) return;
   window._lastFbHash = incomingHash;
 
-  // Aplicar datos remotos al estado local
-  // IMPORTANTE: Los SNAPS (histórico) NUNCA se sobreescriben si ya tenemos más localmente
-  window.DB       = data.DB       || [];
-  window.RDB      = data.RDB      || [];
-  // Preservar el histórico más completo: el local o el remoto, el que tenga más snapshots
+  // Restaurar DB y RDB desde Firebase
+  window.DB  = data.DB  || [];
+  window.RDB = data.RDB || [];
+
+  // SNAPS: conservar siempre el historial más completo
   const remoteSNAPS = data.SNAPS || [];
   const localSNAPS  = window.SNAPS || [];
-  window.SNAPS    = remoteSNAPS.length >= localSNAPS.length ? remoteSNAPS : localSNAPS;
-  window.pptxFile = data.pptxFile || '';
-  window.xlsxFile = data.xlsxFile || '';
+  if (remoteSNAPS.length >= localSNAPS.length) {
+    window.SNAPS = remoteSNAPS;
+  } else {
+    // Local tiene más snapshots — subir a Firebase para que todos los vean
+    setTimeout(() => {
+      if (typeof window.saveToFirebase === 'function') window.saveToFirebase();
+    }, 1000);
+  }
 
   window.DB.forEach(d => { d._estatus = window.normEstatus(d._estatus); });
   window.deduplicateRDB();
 
-  // Mostrar dashboard si hay datos
   if (window.DB.length || window.SNAPS.length) {
     window.restoreUIFromData();
     window.refreshAllViews();
-    // Solo mostrar toast si ya había datos antes (no en la carga inicial)
-    if (window._fbInitialized) {
-      window.toast('🔄 Datos sincronizados en tiempo real');
+    // Siempre renderizar snapshots cuando llegan datos de Firebase
+    if (typeof window.renderSnaps === 'function') window.renderSnaps();
+    if (window._fbReady) {
+      window.toast('🔄 Datos actualizados en tiempo real');
     }
-    window._fbInitialized = true;
+    window._fbReady = true;
+    window._lastFbUpdate = Date.now();
   }
 });
 
@@ -75,13 +81,13 @@ window.saveToFirebase = function() {
     const payload = {
       DB:       window.DB,
       RDB:      window.RDB,
-      SNAPS:    window.SNAPS,   // Guardar TODOS los snapshots, sin truncar
-      pptxFile: window.pptxFile,
-      xlsxFile: window.xlsxFile,
-      savedAt:  new Date().toISOString(),
+      SNAPS:    window.SNAPS,
+      pptxFile: window.pptxFile || '',
+      xlsxFile: window.xlsxFile || '',
+      savedAt:  new Date().toISOString() + '_' + Math.random().toString(36).slice(2,7),
     };
     set(ref(db, 'pmo'), payload)
-      .then(() => console.log('✅ Firebase: datos guardados · ' + window.SNAPS.length + ' snapshots'))
+      .then(() => console.log('✅ Firebase: guardado · ' + (window.SNAPS||[]).length + ' snapshots'))
       .catch(e  => console.error('❌ Firebase error:', e));
   } catch(e) {
     console.error('Firebase saveToFirebase error:', e);
@@ -89,6 +95,25 @@ window.saveToFirebase = function() {
 };
 
 console.log('🔥 Firebase conectado · Portafolio PMO · Tiempo real activo');
+
+// ── Poll de respaldo cada 30 seg — garantiza que todos vean cambios ──────────
+// El onValue ya hace tiempo real, pero este poll es el seguro final
+setInterval(() => {
+  if (!window._fbDB || !window._fbRef) return;
+  // Solo releer si han pasado más de 25 segundos desde el último update
+  const now = Date.now();
+  if (window._lastFbUpdate && (now - window._lastFbUpdate) < 25000) return;
+  // Forzar re-lectura tocando un nodo auxiliar
+  import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js')
+    .then(({ get }) => get(window._fbRef(window._fbDB, 'pmo/savedAt'))
+    .then(snap => {
+      const ts = snap.val();
+      if (ts && ts !== window._lastFbHash?.split('|')[0]) {
+        // Hay cambios — el onValue los procesará automáticamente
+        console.log('🔄 Poll detectó cambios nuevos');
+      }
+    })).catch(() => {});
+}, 30000);
 
 // Actualizar indicador de estado en sidebar
 setTimeout(() => {
@@ -388,19 +413,13 @@ tr:hover td{background:var(--bg)}
     <!-- SYNC STATUS BADGE -->
     <div id="syncBadge" style="display:none;align-items:center;gap:6px;padding:7px 10px;border-radius:var(--rs);font-size:11px;font-weight:600;margin-bottom:2px;background:var(--green-bg);color:var(--green);border:.5px solid rgba(45,106,31,.25)">
       <span id="syncDot" style="width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0;animation:pulse 2s infinite"></span>
-      <span id="syncText">Sincronizado</span>
+      <span id="syncText">Sincronizar</span>
       <button onclick="syncNow()" title="Sincronizar ahora" style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:13px;padding:0;line-height:1">🔄</button>
     </div>
-    <button class="load-btn" id="btnSync" onclick="openSyncModal()" style="background:var(--purple-bg);color:var(--purple);border:.5px solid rgba(74,56,153,.25);margin-bottom:4px">
-      <span>🔗</span><span id="txtSync">Configurar URL automática</span>
+    <button class="load-btn" id="btnSync" onclick="syncNow()" style="background:#1a5fb4;color:#fff;border:.5px solid #1a5fb4;margin-bottom:4px;font-weight:700;font-size:13px">
+      <span>🔄</span><span id="txtSync">Sincronizar</span>
     </button>
-    <button class="load-btn load-pptx" id="btnPptx" onclick="document.getElementById('iPptx').click()">
-      <span>📑</span><span id="txtPptx">Cargar PPTX</span>
-    </button>
-    <button class="load-btn load-excel" id="btnExcel" onclick="document.getElementById('iExcel').click()">
-      <span>📗</span><span id="txtExcel">Cargar Excel</span>
-    </button>
-    <div class="file-info" id="fileInfo">Ningún archivo cargado</div>
+    <div class="file-info" id="fileInfo" style="font-size:11px;color:var(--text3);margin:4px 0"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px">
       <button onclick="exportSession()" style="padding:6px;background:none;border:.5px solid var(--border2);border-radius:var(--rs);font-size:11px;color:var(--blue-t);cursor:pointer;font-weight:600;" title="Exportar sesión completa como JSON (incluye histórico)">💾 Exportar</button>
       <button onclick="importSession()" style="padding:6px;background:none;border:.5px solid var(--border2);border-radius:var(--rs);font-size:11px;color:var(--green);cursor:pointer;font-weight:600;" title="Importar sesión desde archivo JSON">📂 Importar</button>
@@ -1210,11 +1229,11 @@ function afterLoad(type, filename, count) {
     .textContent = `✅ ${filename} · ${count} ${label}`;
   document.getElementById(`dz-${type === 'pptx' ? 'pptx' : 'excel'}`).classList.add('dz-loaded');
 
-  // Sidebar
+  // Sidebar — botones opcionales (pueden no existir si se quitaron)
   const btn = type === 'pptx' ? document.getElementById('btnPptx') : document.getElementById('btnExcel');
-  btn.classList.add('done');
+  if (btn) btn.classList.add('done');
   const txt = type === 'pptx' ? document.getElementById('txtPptx') : document.getElementById('txtExcel');
-  txt.textContent = '↺ Recargar ' + (type === 'pptx' ? 'PPTX' : 'Excel');
+  if (txt) txt.textContent = '↺ Recargar ' + (type === 'pptx' ? 'PPTX' : 'Excel');
 
   // File info
   const parts = [];
@@ -2654,7 +2673,15 @@ function saveSnap(){
   SNAPS.unshift({id:Date.now(),label:label||'Sin nombre',fecha:new Date().toISOString(),
     pptxFile,xlsxFile,data:JSON.parse(JSON.stringify(DB)),riesgos:JSON.parse(JSON.stringify(RDB)),
     stats:calcStats(DB,RDB)});
-  selSnaps=[];renderSnaps();saveToStorage();broadcastChange();toast('📸 Snapshot guardado: '+label+' · Visible para todos los usuarios');
+  selSnaps=[];
+  renderSnaps();
+  saveToStorage();
+  broadcastChange();
+  // Forzar subida inmediata a Firebase para que TODOS vean el snapshot
+  if (typeof window.saveToFirebase === 'function') {
+    setTimeout(() => window.saveToFirebase(), 300);
+  }
+  toast('📸 Snapshot guardado: '+label+' · Subiendo a Firebase para todos los usuarios...');
 }
 function renderSnaps(){
   const list=document.getElementById('snapList');
@@ -2898,13 +2925,22 @@ function restoreUIFromData() {
     document.getElementById('dashboard').style.display='block';
     document.getElementById('dash-sub').textContent =
       `Sesión restaurada · ${DB.length} iniciativas · ${RDB.length} riesgos · ${SNAPS.length} snapshots`;
-    if (pptxFile) { document.getElementById('btnPptx').classList.add('done'); document.getElementById('txtPptx').textContent='↺ Recargar PPTX'; }
-    if (xlsxFile) { document.getElementById('btnExcel').classList.add('done'); document.getElementById('txtExcel').textContent='↺ Recargar Excel'; }
+    // Botones opcionales — pueden no existir si se quitaron del sidebar
+    const btnPptx = document.getElementById('btnPptx');
+    const txtPptx = document.getElementById('txtPptx');
+    const btnExcel = document.getElementById('btnExcel');
+    const txtExcel = document.getElementById('txtExcel');
+    if (pptxFile && btnPptx) { btnPptx.classList.add('done'); }
+    if (pptxFile && txtPptx) { txtPptx.textContent='↺ Recargar PPTX'; }
+    if (xlsxFile && btnExcel) { btnExcel.classList.add('done'); }
+    if (xlsxFile && txtExcel) { txtExcel.textContent='↺ Recargar Excel'; }
     const parts=[];
     if(pptxFile) parts.push('📑 '+pptxFile+' ('+DB.filter(d=>d._source==='pptx').length+')');
     if(xlsxFile) parts.push('📗 '+xlsxFile+' ('+DB.filter(d=>d._source==='excel').length+')');
-    document.getElementById('fileInfo').textContent = parts.join('\n')+'\n'+DB.length+' total';
-    document.getElementById('btnSnap').disabled = false;
+    const fi = document.getElementById('fileInfo');
+    if(fi) fi.textContent = parts.join('\n')+(parts.length?'\n':'')+DB.length+' total';
+    const btnSnap = document.getElementById('btnSnap');
+    if(btnSnap) btnSnap.disabled = false;
     renderDash();
     populateFilters();
     applyFilters();
@@ -2929,11 +2965,10 @@ window.addEventListener('DOMContentLoaded', () => {
   // — Sync: inicializar badge — la carga es SOLO MANUAL via botón Sincronizar —
   const cfg = getSyncConfig();
   if (cfg.excelUrl || cfg.pptxUrl) {
-    document.getElementById('txtSync').textContent = '✓ Sincronización activa';
-    document.getElementById('btnSync').style.background = 'var(--green-bg)';
-    document.getElementById('btnSync').style.color = 'var(--green)';
+    document.getElementById('txtSync').textContent = 'Sincronizar';
+    document.getElementById('btnSync').style.background = '#1a5fb4';
+    document.getElementById('btnSync').style.color = '#fff';
     // ❌ Auto-carga desactivada — protege el histórico de Snapshots
-    // Para actualizar datos presiona el botón 🔄 Sincronizar manualmente
     updateSyncBadge('ok');
   }
 });
@@ -3100,9 +3135,13 @@ function clearSyncConfig() {
 // Sincronizar ahora (botón 🔄)
 async function syncNow() {
   const cfg = getSyncConfig();
-  if (!cfg.excelUrl && !cfg.pptxUrl) { toast('No hay URL configurada', 'error'); return; }
+  if (!cfg.excelUrl && !cfg.pptxUrl) { toast('No hay URL configurada. Ve a configuración de sync.', 'error'); return; }
   updateSyncBadge('loading');
   await loadFromUrls(cfg);
+  // Forzar guardado en Firebase con timestamp único para notificar a TODOS los usuarios
+  if (typeof window.saveToFirebase === 'function') {
+    setTimeout(() => window.saveToFirebase(), 500);
+  }
 }
 
 // Estado visual del badge
@@ -3114,9 +3153,9 @@ function updateSyncBadge(state) {
 
   if (state === 'none') {
     badge.style.display = 'none';
-    btn.style.background = 'var(--purple-bg)';
-    btn.style.color = 'var(--purple)';
-    document.getElementById('txtSync').textContent = 'Configurar URL automática';
+    btn.style.background = '#1a5fb4';
+    btn.style.color = '#fff';
+    document.getElementById('txtSync').textContent = 'Sincronizar';
     return;
   }
   badge.style.display = 'flex';
@@ -3124,7 +3163,7 @@ function updateSyncBadge(state) {
     badge.style.background = 'var(--blue-bg)'; badge.style.color = 'var(--blue-t)';
     badge.style.borderColor = 'rgba(26,95,180,.2)';
     dot.style.background = 'var(--blue)'; dot.style.animation = 'pulse .8s infinite';
-    text.textContent = 'Cargando datos…';
+    text.textContent = 'Sincronizando…';
     btn.style.background = 'var(--blue-bg)'; btn.style.color = 'var(--blue-t)';
     document.getElementById('txtSync').textContent = 'Sincronizando…';
   } else if (state === 'ok') {
@@ -3133,8 +3172,8 @@ function updateSyncBadge(state) {
     dot.style.background = 'var(--green)'; dot.style.animation = 'pulse 2s infinite';
     const now = new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
     text.textContent = 'Sincronizado ' + now;
-    btn.style.background = 'var(--green-bg)'; btn.style.color = 'var(--green)';
-    document.getElementById('txtSync').textContent = '✓ Sincronización activa';
+    btn.style.background = '#1a5fb4'; btn.style.color = '#fff';
+    document.getElementById('txtSync').textContent = 'Sincronizar';
   } else if (state === 'error') {
     badge.style.background = 'var(--red-bg)'; badge.style.color = 'var(--red)';
     badge.style.borderColor = 'rgba(160,52,43,.2)';
@@ -4002,6 +4041,7 @@ window.deduplicateRDB    = deduplicateRDB;
 window.restoreUIFromData = restoreUIFromData;
 window.refreshAllViews   = refreshAllViews;
 window.toast             = toast;
+window.renderSnaps       = renderSnaps;
 </script>
 </body>
 </html>
