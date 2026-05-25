@@ -43,9 +43,13 @@ onValue(pmoRef, (snapshot) => {
   window._lastFbHash = incomingHash;
 
   // Aplicar datos remotos al estado local
+  // IMPORTANTE: Los SNAPS (histórico) NUNCA se sobreescriben si ya tenemos más localmente
   window.DB       = data.DB       || [];
   window.RDB      = data.RDB      || [];
-  window.SNAPS    = data.SNAPS    || [];
+  // Preservar el histórico más completo: el local o el remoto, el que tenga más snapshots
+  const remoteSNAPS = data.SNAPS || [];
+  const localSNAPS  = window.SNAPS || [];
+  window.SNAPS    = remoteSNAPS.length >= localSNAPS.length ? remoteSNAPS : localSNAPS;
   window.pptxFile = data.pptxFile || '';
   window.xlsxFile = data.xlsxFile || '';
 
@@ -71,13 +75,13 @@ window.saveToFirebase = function() {
     const payload = {
       DB:       window.DB,
       RDB:      window.RDB,
-      SNAPS:    window.SNAPS.slice(0, 20),
+      SNAPS:    window.SNAPS,   // Guardar TODOS los snapshots, sin truncar
       pptxFile: window.pptxFile,
       xlsxFile: window.xlsxFile,
       savedAt:  new Date().toISOString(),
     };
     set(ref(db, 'pmo'), payload)
-      .then(() => console.log('✅ Firebase: datos guardados'))
+      .then(() => console.log('✅ Firebase: datos guardados · ' + window.SNAPS.length + ' snapshots'))
       .catch(e  => console.error('❌ Firebase error:', e));
   } catch(e) {
     console.error('Firebase saveToFirebase error:', e);
@@ -1006,6 +1010,7 @@ const EXCEL_MAP = {
   _tl:         ['tl','t.l.','tech lead','technical lead','lider tecnico','líder técnico','lider técnico','líder tecnico','lider tech','líder tech','responsable técnico','responsable tecnico','lead técnico','lead tecnico','tl asignado'],
   _resp:       ['responsable ti','responsable de ti','owner ti','lider ti','líder ti'],
   _dev:        ['desarrollador','desarrolladores','developer','dev','programador','ingeniero de software','asignado a','asignado','recurso asignado','recurso'],
+  _prioTI:     ['prioridad ti','prioridad de ti','prioridad_ti','prior ti','prioridad it','priority ti','prioridad para ti'],
   _area:       ['área','area','solicitante','unidad','depto','departamento','area ti','área ti'],
   _prioridad:  ['prioridad','priorización','priorizacion','priority','urgencia'],
   _avance:     ['avance','avance %','avance%','progreso','% avance','porcentaje'],
@@ -1335,6 +1340,18 @@ function renderResumen() {
   const req   = DB.filter(d => normTipo(d._tipo) === 'Requerimiento');
   const epic  = DB.filter(d => normTipo(d._tipo) === 'Épica');
 
+  // ── Prioridad TI — detectar registros con _prioTI = "Si" / "Sí" / "YES" ──
+  function esPrioTI(d) {
+    const v = String(d._prioTI||'').trim().toLowerCase()
+               .normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    return /^(si|s[ií]|yes|1|true|x)$/.test(v);
+  }
+  const prioTITotal = DB.filter(esPrioTI);
+  const prioTIProy  = proy.filter(esPrioTI);
+  const prioTIReq   = req.filter(esPrioTI);
+  const prioTIEpic  = epic.filter(esPrioTI);
+  const hasPrioTI   = prioTITotal.length > 0;
+
   // Contar por semáforo — global y por tipo
   function semCount(subset) {
     const cnt = {};
@@ -1379,16 +1396,30 @@ function renderResumen() {
     }).join('');
   }
 
-  function seccionTipo(titulo, icono, color, subset, semCnt, tipoFilter) {
+  // ── Badge "Prioridad TI: SI" clickeable ───────────────────────────────────
+  function prioTIBadge(count, tipoFilter) {
+    if (!count) return '';
+    return `<span onclick="goToDataFiltered('__prio_ti__','${tipoFilter||''}')" title="Ver ${count} con Prioridad TI = Sí en Data"
+      style="display:inline-flex;align-items:center;gap:4px;background:#fff3e0;color:#e65100;border:.5px solid #ffcc80;border-radius:5px;padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">
+      ⭐ Prioridad TI: ${count} →
+    </span>`;
+  }
+
+  function seccionTipo(titulo, icono, color, subset, semCnt, tipoFilter, prioTISubset) {
     if (!subset.length) return '';
     const sinE = subset.filter(d => normEstatus(d._estatus) === '—').length;
+    const pTI  = prioTISubset ? prioTISubset.length : 0;
     return `
     <div style="background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);margin-bottom:1.25rem">
       <div style="display:flex;align-items:center;gap:10px;padding:14px 20px;background:var(--surface2);border-bottom:.5px solid var(--border)">
         <span style="font-size:20px">${icono}</span>
         <div>
           <div style="font-size:14px;font-weight:700;color:${color}">${titulo}</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:1px">${subset.length} registros${sinE>0?` · <span style="cursor:pointer;text-decoration:underline;color:var(--text2)" onclick="goToDataFiltered('__sin_estatus__','${tipoFilter||''}')" title="Ver registros sin estatus">${sinE} sin estatus →</span>`:''}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:1px;display:flex;align-items:center;flex-wrap:wrap;gap:4px">
+            ${subset.length} registros
+            ${sinE>0?`<span style="cursor:pointer;text-decoration:underline;color:var(--text2)" onclick="goToDataFiltered('__sin_estatus__','${tipoFilter||''}')" title="Ver registros sin estatus">&nbsp;· ${sinE} sin estatus →</span>`:''}
+            ${hasPrioTI && pTI>0 ? prioTIBadge(pTI, tipoFilter) : ''}
+          </div>
         </div>
         <div style="margin-left:auto;font-size:28px;font-weight:900;color:${color}">${subset.length}</div>
       </div>
@@ -1400,7 +1431,7 @@ function renderResumen() {
   }
 
   document.getElementById('res-sub').textContent =
-    `${total} iniciativas · ${proy.length} Proyectos · ${req.length} Requerimientos · ${epic.length > 0 ? epic.length + ' Épicas · ' : ''}5 estatus`;
+    `${total} iniciativas · ${proy.length} Proyectos · ${req.length} Requerimientos · ${epic.length > 0 ? epic.length + ' Épicas · ' : ''}5 estatus${hasPrioTI?' · '+prioTITotal.length+' Prioridad TI':''}`;
 
   document.getElementById('res-content').innerHTML = `
 
@@ -1409,11 +1440,12 @@ function renderResumen() {
       <div>
         <div style="font-size:11px;color:rgba(255,255,255,.7);font-weight:700;text-transform:uppercase;letter-spacing:.9px;margin-bottom:4px">Portafolio Total</div>
         <div style="font-size:58px;font-weight:900;color:#fff;line-height:1">${total}</div>
-        <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">
+        <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap;align-items:center">
           <span style="font-size:12px;color:rgba(255,255,255,.8)">🗂️ ${proy.length} Proyectos</span>
           <span style="font-size:12px;color:rgba(255,255,255,.8)">📋 ${req.length} Requerimientos</span>
           ${epic.length ? `<span style="font-size:12px;color:rgba(255,255,255,.8)">⚡ ${epic.length} Épicas</span>` : ''}
           ${sinClasif > 0 ? `<span style="font-size:12px;color:rgba(255,255,255,.85);cursor:pointer;text-decoration:underline;text-underline-offset:3px" onclick="goToDataFiltered('__sin_estatus__','')" title="Ver ${sinClasif} registros sin estatus en Data">⚪ ${sinClasif} sin estatus →</span>` : ''}
+          ${hasPrioTI ? `<span onclick="goToDataFiltered('__prio_ti__','')" style="display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.2);color:#fff;border:.5px solid rgba(255,255,255,.4);border-radius:5px;padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer">⭐ ${prioTITotal.length} Prioridad TI →</span>` : ''}
         </div>
       </div>
       <div style="font-size:52px;opacity:.12">📊</div>
@@ -1433,9 +1465,9 @@ function renderResumen() {
     <!-- ③ DESGLOSE POR TIPO -->
     <div class="section-label" style="margin-bottom:12px;margin-top:.5rem">📂 Desglose por Tipo</div>
 
-    ${seccionTipo('Proyectos', '🗂️', 'var(--blue-t)', proy, semProy, 'Proyecto')}
-    ${seccionTipo('Requerimientos', '📋', 'var(--purple)', req, semReq, 'Requerimiento')}
-    ${seccionTipo('Épicas', '⚡', 'var(--amber)', epic, semEpic, 'Épica')}
+    ${seccionTipo('Proyectos', '🗂️', 'var(--blue-t)', proy, semProy, 'Proyecto', prioTIProy)}
+    ${seccionTipo('Requerimientos', '📋', 'var(--purple)', req, semReq, 'Requerimiento', prioTIReq)}
+    ${seccionTipo('Épicas', '⚡', 'var(--amber)', epic, semEpic, 'Épica', prioTIEpic)}
   `;
 }
 
@@ -1457,15 +1489,26 @@ function goToDataFiltered(estatus, tipo) {
     const selE = document.getElementById('f-estatus'); if (selE) selE.value = '';
     if (tipo) { const selT = document.getElementById('f-tipo'); if (selT) selT.value = tipo; }
     populateFilters();
-    // Filtrar manualmente: solo los que normEstatus devuelve '—'
     filteredDB = DB.filter(d => {
       const tipoOk = !tipo || d._tipo === tipo;
       return tipoOk && normEstatus(d._estatus) === '—';
     });
     renderTable();
-    // Mostrar aviso en la tabla
     const countEl = document.getElementById('tbl-count');
     if (countEl) countEl.textContent = filteredDB.length + ' registros sin estatus (de ' + DB.length + ' total)';
+  } else if (estatus === '__prio_ti__') {
+    // Caso especial: mostrar registros con Prioridad TI = Sí
+    const selE = document.getElementById('f-estatus'); if (selE) selE.value = '';
+    if (tipo) { const selT = document.getElementById('f-tipo'); if (selT) selT.value = tipo; }
+    populateFilters();
+    filteredDB = DB.filter(d => {
+      const tipoOk = !tipo || d._tipo === tipo;
+      const v = String(d._prioTI||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      return tipoOk && /^(si|s[ií]|yes|1|true|x)$/.test(v);
+    });
+    renderTable();
+    const countEl = document.getElementById('tbl-count');
+    if (countEl) countEl.textContent = filteredDB.length + ' registros con Prioridad TI (de ' + DB.length + ' total)';
   } else {
     if (estatus) { const sel = document.getElementById('f-estatus'); if (sel) sel.value = estatus; }
     if (tipo)    { const sel = document.getElementById('f-tipo');    if (sel) sel.value = tipo; }
@@ -1759,7 +1802,7 @@ function refreshAllViews() {
 
 const OVERRIDES_KEY = 'pmo_overrides_v1';
 let _pollTimer = null;
-const POLL_MS   = 30000; // 30 segundos — detecta cambios en Excel rápidamente
+const POLL_MS   = 30000; // referencia, no se usa en poll automático
 
 function getOverrides() {
   try { return JSON.parse(localStorage.getItem(OVERRIDES_KEY)||'{}'); } catch(e) { return {}; }
@@ -1779,15 +1822,10 @@ function applyOverrides(arr) {
   return arr.map(d => (d._nombre && ov[d._nombre]) ? { ...d, ...ov[d._nombre] } : d);
 }
 
+// ── Poll automático DESACTIVADO — actualización es MANUAL vía "Sincronizar" ──
+// Esto protege el histórico de Snapshots de ser sobreescrito por el Excel
 function startDrivePoll() {
-  if (_pollTimer) clearInterval(_pollTimer);
-  _pollTimer = setInterval(async () => {
-    const cfg = getSyncConfig();
-    if (!cfg.excelUrl && !cfg.pptxUrl) return;
-    // Siempre recargar Excel desde la URL → resultado sube a Firebase
-    // Así cualquier corrección en el Excel se propaga a TODOS en tiempo real
-    await loadFromUrls(cfg, true); // silent=true: sin toast
-  }, POLL_MS);
+  if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
 }
 
 // BroadcastChannel: tabs del mismo navegador
@@ -2727,26 +2765,25 @@ function saveToStorage() {
     console.warn('localStorage no disponible en este entorno');
   } else {
     try {
-      // Para ahorrar espacio, en SNAPS solo guardamos las últimas 20
-      const snapsToSave = SNAPS.slice(0, 20);
+      // Guardar TODOS los snapshots — no truncar para proteger el histórico
       const payload = {
         DB, RDB,
-        SNAPS: snapsToSave,
+        SNAPS,
         pptxFile, xlsxFile,
         savedAt: new Date().toISOString(),
       };
       const json = JSON.stringify(payload);
-      // Si supera 4 MB, recortar snapshots más antiguos
+      // Solo si supera 4 MB recortar snapshots más antiguos
       if (json.length > 4 * 1024 * 1024) {
-        payload.SNAPS = snapsToSave.slice(0, 10);
-        toast('⚠️ Muchos snapshots: se conservan solo los 10 más recientes en caché local', 'error');
+        payload.SNAPS = SNAPS.slice(0, 20);
+        toast('⚠️ Muchos snapshots: se conservan los 20 más recientes en caché local', 'error');
       }
       localStorage.setItem(LS_KEY, JSON.stringify(payload));
     } catch(e) {
       console.warn('localStorage lleno o bloqueado:', e.message);
       try {
-        localStorage.setItem(LS_KEY, JSON.stringify({ DB, RDB, SNAPS:[], pptxFile, xlsxFile, savedAt: new Date().toISOString() }));
-        toast('⚠️ Espacio insuficiente: histórico no guardado. Exporta la sesión para conservarlo.', 'error');
+        localStorage.setItem(LS_KEY, JSON.stringify({ DB, RDB, SNAPS: SNAPS.slice(0,10), pptxFile, xlsxFile, savedAt: new Date().toISOString() }));
+        toast('⚠️ Espacio insuficiente: solo los 10 snapshots más recientes se conservaron. Usa "Exportar sesión" para respaldar.', 'error');
       } catch(e2) {
         toast('⚠️ No se pudo guardar en este navegador. Usa "Exportar sesión" para conservar los datos.', 'error');
       }
@@ -2889,21 +2926,15 @@ window.addEventListener('DOMContentLoaded', () => {
     toast(msg);
   }
 
-  // — Sync: inicializar badge y auto-cargar si hay URL guardada —
+  // — Sync: inicializar badge — la carga es SOLO MANUAL via botón Sincronizar —
   const cfg = getSyncConfig();
   if (cfg.excelUrl || cfg.pptxUrl) {
     document.getElementById('txtSync').textContent = '✓ Sincronización activa';
     document.getElementById('btnSync').style.background = 'var(--green-bg)';
     document.getElementById('btnSync').style.color = 'var(--green)';
-    if (cfg.autoRefresh !== false) {
-      setTimeout(async () => {
-        updateSyncBadge('loading');
-        await loadFromUrls(cfg);
-        startDrivePoll();
-      }, 800);
-    } else {
-      updateSyncBadge('ok');
-    }
+    // ❌ Auto-carga desactivada — protege el histórico de Snapshots
+    // Para actualizar datos presiona el botón 🔄 Sincronizar manualmente
+    updateSyncBadge('ok');
   }
 });
 
@@ -2931,13 +2962,15 @@ function getSyncConfig() {
       return {
         excelUrl: DEFAULT_EXCEL_URL,
         pptxUrl:  DEFAULT_PPTX_URL,
-        autoRefresh: true
+        autoRefresh: false   // siempre manual — protege histórico de snapshots
       };
     }
+    // Forzar autoRefresh=false independientemente de lo que esté guardado
+    stored.autoRefresh = false;
     return stored;
   }
   catch(e) {
-    return { excelUrl: DEFAULT_EXCEL_URL, pptxUrl: DEFAULT_PPTX_URL, autoRefresh: true };
+    return { excelUrl: DEFAULT_EXCEL_URL, pptxUrl: DEFAULT_PPTX_URL, autoRefresh: false };
   }
 }
 function setSyncConfig(cfg) {
@@ -3205,7 +3238,7 @@ async function loadFromUrls(cfg, silent=false) {
     updateSyncBadge('ok');
     saveToStorage();
     broadcastChange();
-    if (!silent) startDrivePoll(); // iniciar polling tras primera carga exitosa
+    // ❌ startDrivePoll() eliminado — actualización siempre manual
   } else if (errors.length > 0) {
     updateSyncBadge('error');
     if (!silent) toast('⚠️ Error al sincronizar: ' + errors[0], 'error');
