@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>PMO · Gestión de Portafolio TI</title>
-<!-- v9.0 - Firebase Auth login, roles Admin/PM/Viewer, user management panel - 2026-05-25 -->
+<!-- v9.1 - multi-select estatus filter in Data - 2026-05-26 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -678,7 +678,43 @@ tr:hover td{background:var(--bg)}
     <div class="filters-bar">
       <input type="text" id="f-q" placeholder="🔍  Buscar..." oninput="applyFilters()">
       <select id="f-tipo"    onchange="applyFilters()"><option value="">Todos los tipos</option></select>
-      <select id="f-estatus" onchange="applyFilters()"><option value="">Todos los estatus</option></select>
+      <!-- Filtro multi-estatus -->
+      <div style="position:relative" id="estatus-dropdown-wrap">
+        <button id="f-estatus-btn" onclick="toggleEstatusDropdown(event)" type="button"
+          style="font-size:13px;padding:7px 11px;border:.5px solid var(--border2);border-radius:var(--rs);background:var(--surface);color:var(--text);height:36px;cursor:pointer;display:flex;align-items:center;gap:6px;min-width:160px;justify-content:space-between">
+          <span id="f-estatus-label">Todos los estatus</span>
+          <span style="font-size:10px;opacity:.5">▼</span>
+        </button>
+        <div id="f-estatus-menu" style="display:none;position:absolute;top:38px;left:0;background:#fff;border:.5px solid var(--border2);border-radius:var(--rs);box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:999;min-width:200px;padding:6px 0">
+          <label style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text3);border-bottom:.5px solid var(--border)">
+            <input type="checkbox" id="f-est-all" onchange="toggleAllEstatus(this)" checked style="cursor:pointer"> Todos los estatus
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;font-size:12px" onmouseover="this.style.background='#f7f6f3'" onmouseout="this.style.background=''">
+            <input type="checkbox" class="f-est-cb" value="Sin iniciar" onchange="applyFilters()" style="cursor:pointer">
+            <span style="width:10px;height:10px;border-radius:50%;background:#e0e0e0;border:1.5px solid #bbb;display:inline-block;flex-shrink:0"></span> Sin iniciar
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;font-size:12px" onmouseover="this.style.background='#f7f6f3'" onmouseout="this.style.background=''">
+            <input type="checkbox" class="f-est-cb" value="En pausa" onchange="applyFilters()" style="cursor:pointer">
+            <span style="width:10px;height:10px;border-radius:50%;background:#ff9800;border:1.5px solid #e65100;display:inline-block;flex-shrink:0"></span> En pausa
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;font-size:12px" onmouseover="this.style.background='#f7f6f3'" onmouseout="this.style.background=''">
+            <input type="checkbox" class="f-est-cb" value="En tiempo" onchange="applyFilters()" style="cursor:pointer">
+            <span style="width:10px;height:10px;border-radius:50%;background:#4caf50;border:1.5px solid #2e7d32;display:inline-block;flex-shrink:0"></span> En tiempo
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;font-size:12px" onmouseover="this.style.background='#f7f6f3'" onmouseout="this.style.background=''">
+            <input type="checkbox" class="f-est-cb" value="En riesgo" onchange="applyFilters()" style="cursor:pointer">
+            <span style="width:10px;height:10px;border-radius:50%;background:#ffc107;border:1.5px solid #f9a825;display:inline-block;flex-shrink:0"></span> En riesgo
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;font-size:12px" onmouseover="this.style.background='#f7f6f3'" onmouseout="this.style.background=''">
+            <input type="checkbox" class="f-est-cb" value="Con problema" onchange="applyFilters()" style="cursor:pointer">
+            <span style="width:10px;height:10px;border-radius:50%;background:#f44336;border:1.5px solid #c62828;display:inline-block;flex-shrink:0"></span> Con problema
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;font-size:12px" onmouseover="this.style.background='#f7f6f3'" onmouseout="this.style.background=''">
+            <input type="checkbox" class="f-est-cb" value="Finalizado" onchange="applyFilters()" style="cursor:pointer">
+            <span style="width:10px;height:10px;border-radius:50%;background:#607d8b;border:1.5px solid #455a64;display:inline-block;flex-shrink:0"></span> Finalizado
+          </label>
+        </div>
+      </div>
       <select id="f-pm"      onchange="applyFilters()"><option value="">Todos los PM</option></select>
       <select id="f-resp"    onchange="applyFilters()"><option value="">Todos los Resp. TI</option></select>
       <select id="f-dev"     onchange="applyFilters()"><option value="">Todos los devs</option></select>
@@ -1769,7 +1805,11 @@ function goToDataFiltered(estatus, tipo) {
     const countEl = document.getElementById('tbl-count');
     if (countEl) countEl.textContent = filteredDB.length + ' registros con Prioridad TI (de ' + DB.length + ' total)';
   } else {
-    if (estatus) { const sel = document.getElementById('f-estatus'); if (sel) sel.value = estatus; }
+    if (estatus) {
+      // Marcar solo ese estatus en el multi-select
+      document.querySelectorAll('.f-est-cb').forEach(c => { c.checked = c.value === estatus; });
+      const allCb = document.getElementById('f-est-all'); if (allCb) allCb.checked = false;
+    }
     if (tipo)    { const sel = document.getElementById('f-tipo');    if (sel) sel.value = tipo; }
     populateFilters();
     applyFilters();
@@ -1887,32 +1927,60 @@ function populateFilters() {
     const sel=document.getElementById(id);if(!sel)return; const sv=sel.value;
     sel.innerHTML=`<option value="">${ph}</option>`+uniqVals(key).map(v=>`<option${v===sv?' selected':''}>${v}</option>`).join('');
   });
-  // Estatus: siempre los 5 fijos del semáforo
-  const selE=document.getElementById('f-estatus');if(selE){const sv=selE.value;
-  const EDOTS={'Sin iniciar':'⚪','En pausa':'🟠','En tiempo':'🟢','En riesgo':'🟡','Con problema':'🔴','Finalizado':'✅'};
-  selE.innerHTML='<option value="">Todos los estatus</option>'+SEM.map(s=>`<option value="${s.label}"${s.label===sv?' selected':''}>${EDOTS[s.label]||''} ${s.label}</option>`).join('');}
+}
+
+// ── Dropdown multi-estatus ──────────────────────────────────────────────────
+function toggleEstatusDropdown(e) {
+  e.stopPropagation();
+  const menu = document.getElementById('f-estatus-menu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+document.addEventListener('click', () => {
+  const menu = document.getElementById('f-estatus-menu');
+  if (menu) menu.style.display = 'none';
+});
+function toggleAllEstatus(cb) {
+  document.querySelectorAll('.f-est-cb').forEach(c => { c.checked = cb.checked; });
+  applyFilters();
+}
+function getSelectedEstatus() {
+  return [...document.querySelectorAll('.f-est-cb:checked')].map(c => c.value);
+}
+function updateEstatusLabel() {
+  const checked = getSelectedEstatus();
+  const lbl = document.getElementById('f-estatus-label');
+  const allCb = document.getElementById('f-est-all');
+  if (!lbl) return;
+  if (checked.length === 0) { lbl.textContent = 'Sin estatus seleccionado'; if (allCb) allCb.checked = false; }
+  else if (checked.length === 6) { lbl.textContent = 'Todos los estatus'; if (allCb) allCb.checked = true; }
+  else { lbl.textContent = checked.join(' + '); if (allCb) allCb.checked = false; }
 }
 
 function clearFilters() {
-  document.getElementById('f-q').value='';
-  ['f-tipo','f-estatus','f-pm','f-resp','f-dev','f-area','f-fase'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  document.getElementById('f-q').value = '';
+  ['f-tipo','f-pm','f-resp','f-dev','f-area','f-fase'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.querySelectorAll('.f-est-cb').forEach(c => { c.checked = false; });
+  const allCb = document.getElementById('f-est-all'); if (allCb) allCb.checked = true;
+  const lbl = document.getElementById('f-estatus-label'); if (lbl) lbl.textContent = 'Todos los estatus';
   applyFilters();
 }
 
 let filteredDB = [];
 function applyFilters() {
-  const q    = document.getElementById('f-q').value.toLowerCase();
-  const ft   = document.getElementById('f-tipo').value;
-  const fe   = document.getElementById('f-estatus').value;
-  const fp   = document.getElementById('f-pm').value;
-  const fresp= document.getElementById('f-resp')?.value||'';
-  const fdev = document.getElementById('f-dev')?.value||'';
-  const fa   = document.getElementById('f-area').value;
-  const ff   = document.getElementById('f-fase')?.value||'';
+  updateEstatusLabel();
+  const q     = document.getElementById('f-q').value.toLowerCase();
+  const ft    = document.getElementById('f-tipo')?.value || '';
+  const selEst = getSelectedEstatus();
+  const fp    = document.getElementById('f-pm')?.value || '';
+  const fresp = document.getElementById('f-resp')?.value || '';
+  const fdev  = document.getElementById('f-dev')?.value || '';
+  const fa    = document.getElementById('f-area')?.value || '';
+  const ff    = document.getElementById('f-fase')?.value || '';
   filteredDB = DB.filter(d => {
     const eLabel = normEstatus(d._estatus);
-    const eOk = !fe || eLabel === fe;
-    return (!ft||d._tipo===ft)&&eOk&&(!fp||d._pm===fp)&&(!fresp||d._resp===fresp)&&(!fdev||d._dev===fdev)&&(!fa||d._area===fa)&&(!ff||d._fase===ff)&&
+    const eOk = selEst.length === 0 || selEst.includes(eLabel);
+    return (!ft||d._tipo===ft)&&eOk&&(!fp||d._pm===fp)&&(!fresp||d._resp===fresp)&&
+           (!fdev||d._dev===fdev)&&(!fa||d._area===fa)&&(!ff||d._fase===ff)&&
            (!q||COLS.some(cx=>String(d[cx.k]||'').toLowerCase().includes(q)));
   });
   if (sortCol!==null) {
@@ -1920,7 +1988,6 @@ function applyFilters() {
     filteredDB.sort((a,b)=>String(a[k]||'').localeCompare(String(b[k]||''),undefined,{numeric:true})*sortDir);
   }
   renderTable();
-  // Actualizar gráficos en tiempo real si esa vista está activa
   if (document.getElementById('page-graficos')?.classList.contains('active')) renderCharts();
 }
 
