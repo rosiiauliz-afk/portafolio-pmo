@@ -4,14 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>PMO · Gestión de Portafolio TI</title>
-<!-- v8.1 - saveSnap calls Firebase directly, renderSnaps exposed, SNAPS sync fixed - 2026-05-25 -->
+<!-- v9.0 - Firebase Auth login, roles Admin/PM/Viewer, user management panel - 2026-05-25 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <!-- Firebase SDK -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, set, onValue, off } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, set, onValue, off, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDLFHlSj2wrH96oSnuXDQTvsQkLUfO6ni8",
@@ -23,56 +24,212 @@ const firebaseConfig = {
   appId: "1:213419130820:web:732adfc1c221c0e7c0ae91"
 };
 
-const app = initializeApp(firebaseConfig);
-const db  = getDatabase(app);
+const app  = initializeApp(firebaseConfig);
+const db   = getDatabase(app);
+const auth = getAuth(app);
 
-// ── Exponer funciones Firebase al scope global ──────────────────────────────
+// ── Exponer al scope global ──────────────────────────────────────────────────
 window._fbDB  = db;
 window._fbRef = ref;
 window._fbSet = set;
+window._fbAuth = auth;
 
-// ── Firebase: sincroniza datos entre todos los usuarios en tiempo real ────────
-const pmoRef = ref(db, 'pmo');
-onValue(pmoRef, (snapshot) => {
-  const data = snapshot.val();
-  if (!data) return;
+// ── ROLES y PERMISOS ─────────────────────────────────────────────────────────
+const ROLES = {
+  admin:  { label: 'Admin',  color: '#1a5fb4', canSync: true,  canExport: true,  canManageUsers: true,  fullAccess: true  },
+  pm:     { label: 'PM',     color: '#27ae60', canSync: false, canExport: true,  canManageUsers: false, fullAccess: true  },
+  viewer: { label: 'Viewer', color: '#7f8c8d', canSync: false, canExport: false, canManageUsers: false, fullAccess: false },
+};
+window._currentUser = null;
+window._currentRole = null;
 
-  // Hash completo: timestamp + contenido — detecta CUALQUIER cambio
-  const incomingHash = data.savedAt + '|' + (data.DB?.length||0) + '|' + (data.SNAPS?.length||0);
-  if (window._lastFbHash === incomingHash) return;
-  window._lastFbHash = incomingHash;
-
-  // Restaurar DB y RDB desde Firebase
-  window.DB  = data.DB  || [];
-  window.RDB = data.RDB || [];
-
-  // SNAPS: conservar siempre el historial más completo
-  const remoteSNAPS = data.SNAPS || [];
-  const localSNAPS  = window.SNAPS || [];
-  if (remoteSNAPS.length >= localSNAPS.length) {
-    window.SNAPS = remoteSNAPS;
-  } else {
-    // Local tiene más snapshots — subir a Firebase para que todos los vean
-    setTimeout(() => {
-      if (typeof window.saveToFirebase === 'function') window.saveToFirebase();
-    }, 1000);
+// ── Aplicar restricciones de rol ─────────────────────────────────────────────
+window.applyRoleRestrictions = function() {
+  const role = window._currentRoleData || {};
+  // Botón sincronizar — solo Admin
+  const btnSync = document.getElementById('btnSync');
+  if (btnSync) {
+    btnSync.style.display = role.canSync ? '' : 'none';
   }
+  // Botones exportar — Admin y PM
+  document.querySelectorAll('[onclick*="exportGraficos"],[onclick*="openExportModal"],[onclick*="exportReport"]').forEach(b => {
+    b.style.display = role.canExport ? '' : 'none';
+  });
+  // Menú usuarios — solo Admin
+  const navUsers = document.getElementById('nav-usuarios');
+  if (navUsers) navUsers.style.display = role.canManageUsers ? '' : 'none';
+  // Mostrar nombre y rol del usuario
+  const userBadge = document.getElementById('user-badge');
+  if (userBadge && window._currentUser) {
+    userBadge.textContent = (window._currentUser.displayName || window._currentUser.email?.split('@')[0] || 'Usuario') + ' · ' + (role.label||'');
+    userBadge.style.display = '';
+  }
+};
 
-  window.DB.forEach(d => { d._estatus = window.normEstatus(d._estatus); });
-  window.deduplicateRDB();
-
-  if (window.DB.length || window.SNAPS.length) {
-    window.restoreUIFromData();
-    window.refreshAllViews();
-    // Siempre renderizar snapshots cuando llegan datos de Firebase
-    if (typeof window.renderSnaps === 'function') window.renderSnaps();
-    if (window._fbReady) {
-      window.toast('🔄 Datos actualizados en tiempo real');
-    }
-    window._fbReady = true;
-    window._lastFbUpdate = Date.now();
+// ── Auth state observer ───────────────────────────────────────────────────────
+onAuthStateChanged(auth, async (user) => {
+  if (user) {
+    window._currentUser = user;
+    // Leer rol del usuario desde Firebase
+    const roleSnap = await get(ref(db, 'users/' + user.uid + '/role'));
+    const roleName  = roleSnap.val() || 'viewer';
+    window._currentRole     = roleName;
+    window._currentRoleData = ROLES[roleName] || ROLES.viewer;
+    // Ocultar login, mostrar app
+    const loginScreen = document.getElementById('login-screen');
+    if (loginScreen) loginScreen.style.display = 'none';
+    const appRoot = document.getElementById('app-root');
+    if (appRoot) appRoot.style.display = '';
+    window.applyRoleRestrictions();
+    window.toast('👋 Bienvenido, ' + (user.displayName || user.email?.split('@')[0]) + ' · ' + (ROLES[roleName]?.label || roleName));
+    // Iniciar escucha de datos
+    startDataSync();
+  } else {
+    window._currentUser = null;
+    window._currentRole = null;
+    window._currentRoleData = null;
+    const loginScreen = document.getElementById('login-screen');
+    if (loginScreen) loginScreen.style.display = '';
+    const appRoot = document.getElementById('app-root');
+    if (appRoot) appRoot.style.display = 'none';
   }
 });
+
+// ── Login ─────────────────────────────────────────────────────────────────────
+window.doLogin = async function() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass  = document.getElementById('login-pass').value;
+  const errEl = document.getElementById('login-error');
+  if (!email || !pass) { errEl.textContent = 'Ingresa correo y contraseña'; return; }
+  errEl.textContent = '';
+  const btn = document.getElementById('login-btn');
+  btn.disabled = true; btn.textContent = 'Entrando...';
+  try {
+    await signInWithEmailAndPassword(auth, email, pass);
+  } catch(e) {
+    const msgs = {
+      'auth/user-not-found': 'Usuario no encontrado',
+      'auth/wrong-password': 'Contraseña incorrecta',
+      'auth/invalid-email': 'Correo inválido',
+      'auth/too-many-requests': 'Demasiados intentos. Intenta más tarde.',
+      'auth/invalid-credential': 'Correo o contraseña incorrectos',
+    };
+    errEl.textContent = msgs[e.code] || 'Error: ' + e.message;
+    btn.disabled = false; btn.textContent = 'Entrar';
+  }
+};
+
+// ── Logout ────────────────────────────────────────────────────────────────────
+window.doLogout = async function() {
+  if (!confirm('¿Cerrar sesión?')) return;
+  await signOut(auth);
+};
+
+// ── Crear usuario (Admin) ─────────────────────────────────────────────────────
+window.createUser = async function() {
+  const email = document.getElementById('nu-email').value.trim();
+  const pass  = document.getElementById('nu-pass').value;
+  const name  = document.getElementById('nu-name').value.trim();
+  const role  = document.getElementById('nu-role').value;
+  const errEl = document.getElementById('nu-error');
+  if (!email || !pass || !name) { errEl.textContent = 'Completa todos los campos'; return; }
+  if (pass.length < 6) { errEl.textContent = 'La contraseña debe tener al menos 6 caracteres'; return; }
+  errEl.textContent = '';
+  try {
+    // Crear usuario en Firebase Auth (usando REST API para no cerrar sesión del admin)
+    const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyDLFHlSj2wrH96oSnuXDQTvsQkLUfO6ni8`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pass, returnSecureToken: true })
+    });
+    const data = await response.json();
+    if (data.error) throw new Error(data.error.message);
+    // Guardar nombre y rol en Realtime Database
+    await set(ref(db, 'users/' + data.localId), {
+      email, name, role, createdAt: new Date().toISOString(), createdBy: window._currentUser?.email
+    });
+    window.toast('✅ Usuario creado: ' + name + ' (' + ROLES[role]?.label + ')');
+    document.getElementById('nu-email').value = '';
+    document.getElementById('nu-pass').value  = '';
+    document.getElementById('nu-name').value  = '';
+    window.loadUsersList();
+  } catch(e) {
+    const msgs = {
+      'EMAIL_EXISTS': 'Este correo ya está registrado',
+      'WEAK_PASSWORD : Password should be at least 6 characters': 'Contraseña muy corta (mín. 6 caracteres)',
+    };
+    errEl.textContent = msgs[e.message] || 'Error: ' + e.message;
+  }
+};
+
+// ── Cargar lista de usuarios ──────────────────────────────────────────────────
+window.loadUsersList = async function() {
+  const container = document.getElementById('users-list');
+  if (!container) return;
+  container.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px">Cargando...</div>';
+  const snap = await get(ref(db, 'users'));
+  const users = snap.val() || {};
+  if (!Object.keys(users).length) {
+    container.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px">Sin usuarios registrados aún</div>';
+    return;
+  }
+  container.innerHTML = Object.entries(users).map(([uid, u]) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface2);border-radius:var(--rs);border:.5px solid var(--border);margin-bottom:6px">
+      <span style="font-size:20px">👤</span>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600">${u.name||'Sin nombre'}</div>
+        <div style="font-size:11px;color:var(--text3)">${u.email}</div>
+      </div>
+      <span style="padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;background:${ROLES[u.role]?.color||'#888'}22;color:${ROLES[u.role]?.color||'#888'}">${ROLES[u.role]?.label||u.role}</span>
+      <select onchange="changeUserRole('${uid}', this.value)" style="font-size:11px;padding:3px 6px;border:.5px solid var(--border2);border-radius:var(--rs);height:26px">
+        ${Object.entries(ROLES).map(([k,v])=>`<option value="${k}"${k===u.role?' selected':''}>${v.label}</option>`).join('')}
+      </select>
+      <button onclick="deleteUserRecord('${uid}')" style="background:none;border:.5px solid #f44336;color:#f44336;border-radius:var(--rs);padding:3px 8px;font-size:11px;cursor:pointer">🗑️</button>
+    </div>`).join('');
+};
+
+window.changeUserRole = async function(uid, role) {
+  await set(ref(db, 'users/' + uid + '/role'), role);
+  window.toast('✅ Rol actualizado');
+};
+
+window.deleteUserRecord = async function(uid) {
+  if (!confirm('¿Eliminar este usuario del sistema?')) return;
+  await set(ref(db, 'users/' + uid), null);
+  window.loadUsersList();
+  window.toast('🗑️ Usuario eliminado');
+};
+
+// ── Sincronización de datos ───────────────────────────────────────────────────
+function startDataSync() {
+  const pmoRef = ref(db, 'pmo');
+  onValue(pmoRef, (snapshot) => {
+    const data = snapshot.val();
+    if (!data) return;
+    const incomingHash = data.savedAt + '|' + (data.DB?.length||0) + '|' + (data.SNAPS?.length||0);
+    if (window._lastFbHash === incomingHash) return;
+    window._lastFbHash = incomingHash;
+    window.DB  = data.DB  || [];
+    window.RDB = data.RDB || [];
+    const remoteSNAPS = data.SNAPS || [];
+    const localSNAPS  = window.SNAPS || [];
+    if (remoteSNAPS.length >= localSNAPS.length) {
+      window.SNAPS = remoteSNAPS;
+    } else {
+      setTimeout(() => { if (typeof window.saveToFirebase === 'function') window.saveToFirebase(); }, 1000);
+    }
+    window.DB.forEach(d => { d._estatus = window.normEstatus(d._estatus); });
+    window.deduplicateRDB();
+    if (window.DB.length || window.SNAPS.length) {
+      window.restoreUIFromData();
+      window.refreshAllViews();
+      if (typeof window.renderSnaps === 'function') window.renderSnaps();
+      if (window._fbReady) window.toast('🔄 Datos actualizados en tiempo real');
+      window._fbReady = true;
+      window._lastFbUpdate = Date.now();
+    }
+  });
+}
 
 // ── Función global para guardar en Firebase ─────────────────────────────────
 window.saveToFirebase = function() {
@@ -94,25 +251,16 @@ window.saveToFirebase = function() {
   }
 };
 
-console.log('🔥 Firebase conectado · Portafolio PMO · Tiempo real activo');
+console.log('🔥 Firebase Auth + DB conectado · PMO Portafolio TI');
 
-// ── Poll de respaldo cada 30 seg — garantiza que todos vean cambios ──────────
-// El onValue ya hace tiempo real, pero este poll es el seguro final
+// ── Poll de respaldo cada 30 seg ─────────────────────────────────────────────
 setInterval(() => {
-  if (!window._fbDB || !window._fbRef) return;
-  // Solo releer si han pasado más de 25 segundos desde el último update
+  if (!window._fbDB || !window._fbRef || !window._currentUser) return;
   const now = Date.now();
   if (window._lastFbUpdate && (now - window._lastFbUpdate) < 25000) return;
-  // Forzar re-lectura tocando un nodo auxiliar
   import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js')
     .then(({ get }) => get(window._fbRef(window._fbDB, 'pmo/savedAt'))
-    .then(snap => {
-      const ts = snap.val();
-      if (ts && ts !== window._lastFbHash?.split('|')[0]) {
-        // Hay cambios — el onValue los procesará automáticamente
-        console.log('🔄 Poll detectó cambios nuevos');
-      }
-    })).catch(() => {});
+    .then(snap => { const ts = snap.val(); if (ts && ts !== window._lastFbHash?.split('|')[0]) console.log('🔄 Poll detectó cambios'); })).catch(() => {});
 }, 30000);
 
 // Actualizar indicador de estado en sidebar
@@ -121,14 +269,14 @@ setTimeout(() => {
   const txt = document.getElementById('fb-txt');
   const box = document.getElementById('fb-status');
   if (dot && txt && box) {
-    dot.style.background = '#4caf50';
-    dot.style.animation  = 'none';
-    txt.textContent      = '🔥 Firebase · Tiempo real activo';
-    box.style.background = '#e8f5e9';
-    box.style.borderColor= '#a5d6a7';
-    box.style.color      = '#1b5e20';
+    dot.style.background = '#4caf50'; dot.style.animation = 'none';
+    txt.textContent = '🔥 Firebase · Tiempo real activo';
+    box.style.background = '#e8f5e9'; box.style.borderColor = '#a5d6a7'; box.style.color = '#1b5e20';
   }
 }, 2000);
+</script>
+
+// ── Datos sincronizados por startDataSync() dentro del módulo Firebase ──────
 </script>
 <style>
 :root{
@@ -387,6 +535,33 @@ tr:hover td{background:var(--bg)}
 </style>
 </head>
 <body>
+<!-- ══ PANTALLA DE LOGIN ══════════════════════════════════════════════════════ -->
+<div id="login-screen" style="position:fixed;inset:0;background:linear-gradient(135deg,#0d3b78,#1a5fb4);display:flex;align-items:center;justify-content:center;z-index:9999">
+  <div style="background:#fff;border-radius:16px;padding:2.5rem 2rem;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="text-align:center;margin-bottom:1.75rem">
+      <div style="font-size:40px;margin-bottom:8px">📊</div>
+      <div style="font-size:20px;font-weight:900;color:#0d3b78">PMO · TI</div>
+      <div style="font-size:12px;color:#a8a6a0;margin-top:4px">Gestión de Portafolio</div>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:700;color:#6b6a65;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:4px">Correo electrónico</label>
+      <input id="login-email" type="email" placeholder="usuario@empresa.com" onkeydown="if(event.key===Enter)document.getElementById(login-pass).focus()"
+        style="width:100%;padding:10px 12px;border:1.5px solid #e0ddd8;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:11px;font-weight:700;color:#6b6a65;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:4px">Contraseña</label>
+      <input id="login-pass" type="password" placeholder="••••••••" onkeydown="if(event.key===Enter)doLogin()"
+        style="width:100%;padding:10px 12px;border:1.5px solid #e0ddd8;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
+    </div>
+    <div id="login-error" style="color:#c0392b;font-size:12px;margin-bottom:10px;min-height:16px;text-align:center"></div>
+    <button id="login-btn" onclick="doLogin()"
+      style="width:100%;padding:12px;background:#1a5fb4;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">
+      Entrar
+    </button>
+  </div>
+</div>
+<!-- ══ APLICACIÓN ════════════════════════════════════════════════════════════ -->
+<div id="app-root" style="display:none">
 <div class="app">
 
 <!-- ══ SIDEBAR ══ -->
@@ -394,6 +569,7 @@ tr:hover td{background:var(--bg)}
   <div class="brand">
     <div class="brand-name">PMO · TI</div>
     <div class="brand-sub">Gestión de Portafolio</div>
+    <div id="user-badge" style="display:none;font-size:10px;font-weight:700;color:var(--blue-t);background:var(--blue-bg);padding:3px 8px;border-radius:4px;margin-top:6px;text-align:center"></div>
   </div>
   <nav>
     <button class="nav-btn active" onclick="goPage('inicio',this)"><span class="nav-icon">🏠</span>Inicio</button>
@@ -402,6 +578,8 @@ tr:hover td{background:var(--bg)}
     <button class="nav-btn" onclick="goPage('graficos',this)"><span class="nav-icon">📊</span>Gráficos</button>
     <button class="nav-btn" onclick="goPage('riesgos',this)"><span class="nav-icon">⚠️</span>Inventario Riesgos</button>
     <button class="nav-btn" onclick="goPage('historico',this)"><span class="nav-icon">🕐</span>Histórico</button>
+    <button class="nav-btn" id="nav-usuarios" onclick="goPage('usuarios',this);window.loadUsersList()" style="display:none"><span class="nav-icon">👥</span>Usuarios</button>
+    <button class="nav-btn" onclick="doLogout()" style="margin-top:4px;color:var(--red);border-color:var(--red-bg)"><span class="nav-icon">🚪</span>Cerrar sesión</button>
   </nav>
   <div class="sidebar-footer">
     <!-- Indicador Firebase -->
@@ -602,8 +780,69 @@ tr:hover td{background:var(--bg)}
       <div style="margin-top:1.5rem" id="compDiff"></div>
     </div>
   </div>
+  <!-- USUARIOS -->
+  <div class="page" id="page-usuarios">
+    <div class="page-header">
+      <div><div class="page-title">Usuarios</div><div class="page-sub">Gestión de acceso y roles</div></div>
+    </div>
+    <!-- Crear nuevo usuario -->
+    <div style="background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);padding:1.5rem;margin-bottom:1.25rem;box-shadow:var(--shadow)">
+      <div style="font-size:13px;font-weight:700;margin-bottom:1rem">➕ Crear nuevo usuario</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Nombre completo</label>
+          <input id="nu-name" type="text" placeholder="Ej: María García" class="form-input" style="width:100%;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Correo electrónico</label>
+          <input id="nu-email" type="email" placeholder="usuario@empresa.com" class="form-input" style="width:100%;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Contraseña inicial</label>
+          <input id="nu-pass" type="password" placeholder="Mínimo 6 caracteres" class="form-input" style="width:100%;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Rol</label>
+          <select id="nu-role" class="form-select" style="width:100%;box-sizing:border-box">
+            <option value="viewer">Viewer — Solo lectura</option>
+            <option value="pm">PM — Ve todo, no sincroniza</option>
+            <option value="admin">Admin — Acceso total</option>
+          </select>
+        </div>
+      </div>
+      <div id="nu-error" style="color:#c0392b;font-size:12px;min-height:16px;margin-bottom:8px"></div>
+      <button class="btn btn-primary" onclick="createUser()">➕ Crear usuario</button>
+    </div>
+    <!-- Lista de usuarios -->
+    <div style="background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);padding:1.5rem;box-shadow:var(--shadow)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+        <div style="font-size:13px;font-weight:700">👥 Usuarios registrados</div>
+        <button class="btn btn-ghost" onclick="loadUsersList()">🔄 Actualizar</button>
+      </div>
+      <div id="users-list"><div style="color:var(--text3);font-size:13px">Cargando...</div></div>
+    </div>
+    <!-- Guía de roles -->
+    <div style="background:var(--blue-bg);border:.5px solid rgba(26,95,180,.2);border-radius:var(--r);padding:1.25rem;margin-top:1.25rem">
+      <div style="font-size:12px;font-weight:700;color:var(--blue-t);margin-bottom:8px">📋 Guía de roles</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;font-size:12px">
+        <div style="background:#fff;border-radius:var(--rs);padding:10px">
+          <div style="font-weight:700;color:#1a5fb4;margin-bottom:4px">🔵 Admin</div>
+          <div style="color:var(--text2)">Acceso total · Puede sincronizar Excel · Gestiona usuarios · Exporta reportes</div>
+        </div>
+        <div style="background:#fff;border-radius:var(--rs);padding:10px">
+          <div style="font-weight:700;color:#27ae60;margin-bottom:4px">🟢 PM</div>
+          <div style="color:var(--text2)">Ve todos los datos · Exporta reportes · No puede sincronizar ni gestionar usuarios</div>
+        </div>
+        <div style="background:#fff;border-radius:var(--rs);padding:10px">
+          <div style="font-weight:700;color:#7f8c8d;margin-bottom:4px">⚫ Viewer</div>
+          <div style="color:var(--text2)">Solo lectura · No exporta · No sincroniza · Ideal para consulta</div>
+        </div>
+      </div>
+    </div>
+  </div>
 
 </main>
+</div><!-- /app-root -->
 </div>
 
 <!-- MODAL SYNC URL -->
@@ -825,6 +1064,7 @@ function goPage(name, btn) {
   if (name === 'graficos' && DB.length)  renderCharts();
   if (name === 'riesgos')                { populateRFilters(); applyRFilters(); }
   if (name === 'historico')              renderSnaps();
+  if (name === 'usuarios')              { if(typeof window.loadUsersList==='function') window.loadUsersList(); }
 }
 
 // ══════════════════════════════════════════
