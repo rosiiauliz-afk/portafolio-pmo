@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>PMO · Gestión de Portafolio TI</title>
-<!-- v9.2 - pill buttons estatus filter - 2026-05-26 -->
+<!-- v9.4 - Capacidad module with Gantt timeline and HTML export - 2026-05-26 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -276,8 +276,6 @@ setTimeout(() => {
 }, 2000);
 </script>
 
-// ── Datos sincronizados por startDataSync() dentro del módulo Firebase ──────
-</script>
 <style>
 :root{
   --bg:#f7f6f3;--surface:#fff;--surface2:#f0ede8;
@@ -578,6 +576,7 @@ tr:hover td{background:var(--bg)}
     <button class="nav-btn" onclick="goPage('graficos',this)"><span class="nav-icon">📊</span>Gráficos</button>
     <button class="nav-btn" onclick="goPage('riesgos',this)"><span class="nav-icon">⚠️</span>Inventario Riesgos</button>
     <button class="nav-btn" onclick="goPage('historico',this)"><span class="nav-icon">🕐</span>Histórico</button>
+    <button class="nav-btn" onclick="goPage('capacidad',this)"><span class="nav-icon">📊</span>Capacidad</button>
     <button class="nav-btn" id="nav-usuarios" onclick="goPage('usuarios',this);window.loadUsersList()" style="display:none"><span class="nav-icon">👥</span>Usuarios</button>
     <button class="nav-btn" onclick="doLogout()" style="margin-top:4px;color:var(--red);border-color:var(--red-bg)"><span class="nav-icon">🚪</span>Cerrar sesión</button>
   </nav>
@@ -810,6 +809,58 @@ tr:hover td{background:var(--bg)}
       <div style="margin-top:1.5rem" id="compDiff"></div>
     </div>
   </div>
+  <!-- CAPACIDAD -->
+  <div class="page" id="page-capacidad">
+    <div class="page-header">
+      <div><div class="page-title">Capacidad del Equipo</div><div class="page-sub" id="cap-sub">Roadmap de capacidad por célula · Sprint Mayo–Junio 2026</div></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="exportCapacidadHTML()" style="border-color:var(--blue-t);color:var(--blue-t);font-weight:700">📄 Exportar HTML</button>
+      </div>
+    </div>
+
+    <style>
+    .cap-krow{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:1.25rem}
+    .cap-kpi{background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);padding:12px 14px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+    .cap-kpi:hover{border-color:var(--blue);box-shadow:0 2px 8px rgba(26,95,180,.1)}
+    .cap-kpi.sel{border:2px solid var(--blue);background:var(--blue-bg)}
+    .cap-kv{font-size:14px;font-weight:700;color:var(--text);margin-bottom:2px}
+    .cap-kl{font-size:11px;color:var(--text3);margin-bottom:8px}
+    .cap-mini{height:5px;border-radius:999px;background:var(--border2);overflow:hidden;margin-bottom:4px}
+    .cap-mini-fill{height:100%;border-radius:999px}
+    .cap-pct{font-size:11px;font-weight:700}
+    .cap-detail{background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
+    .cap-detail-hdr{padding:14px 20px;background:var(--surface2);border-bottom:.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+    .cap-stat-row{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:.5px solid var(--border)}
+    .cap-stat-box{padding:12px;text-align:center;border-right:.5px solid var(--border)}
+    .cap-stat-box:last-child{border-right:none}
+    .cap-stat-v{font-size:22px;font-weight:900;line-height:1}
+    .cap-stat-l{font-size:10px;color:var(--text3);margin-top:3px;text-transform:uppercase;letter-spacing:.4px}
+    .cap-tl-wrap{overflow-x:auto;max-height:600px;overflow-y:auto}
+    .tl-hdr-row,.tl-row{display:grid;align-items:center;border-bottom:.5px solid var(--border)}
+    .tl-row:hover{background:var(--surface2)}
+    .tl-dev-cell{padding:7px 10px;border-right:.5px solid var(--border)}
+    .tl-dev-name{font-size:12px;font-weight:700;color:var(--text)}
+    .tl-task-name{font-size:11px;color:var(--text3);margin-top:1px}
+    .tl-pct-cell{padding:5px 7px;font-size:11px;font-weight:700;text-align:center;border-right:.5px solid var(--border)}
+    .day-cell{padding:2px 1px;text-align:center;border-right:.5px solid var(--border)}
+    .day-lbl{font-size:9px;color:var(--text3);line-height:1.2}
+    .day-num{font-size:10px;font-weight:500;color:var(--text2)}
+    .cap-badge{font-size:10px;padding:3px 9px;border-radius:999px;font-weight:700}
+    .cb-ok{background:#e4f2de;color:#27500a}.cb-warn{background:#faeeda;color:#633806}.cb-over{background:#fbeaea;color:#a0342b}.cb-info{background:#e6f1fb;color:#0c447c}
+    </style>
+
+    <!-- KPIs por célula -->
+    <div class="cap-krow" id="cap-krow"></div>
+
+    <!-- Detalle -->
+    <div id="cap-detail-area">
+      <div style="padding:3rem;text-align:center;background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);color:var(--text3)">
+        <div style="font-size:32px;margin-bottom:8px">👆</div>
+        <div style="font-size:13px">Selecciona una célula arriba para ver el detalle</div>
+      </div>
+    </div>
+  </div>
+
   <!-- USUARIOS -->
   <div class="page" id="page-usuarios">
     <div class="page-header">
@@ -1094,6 +1145,7 @@ function goPage(name, btn) {
   if (name === 'graficos' && DB.length)  renderCharts();
   if (name === 'riesgos')                { populateRFilters(); applyRFilters(); }
   if (name === 'historico')              renderSnaps();
+  if (name === 'capacidad')              renderCapacidad();
   if (name === 'usuarios')              { if(typeof window.loadUsersList==='function') window.loadUsersList(); }
 }
 
@@ -4359,6 +4411,245 @@ window.restoreUIFromData = restoreUIFromData;
 window.refreshAllViews   = refreshAllViews;
 window.toast             = toast;
 window.renderSnaps       = renderSnaps;
+
+// ══════════════════════════════════════════
+// MÓDULO CAPACIDAD DEL EQUIPO
+// ══════════════════════════════════════════
+const CAP_TASK_COLORS = ['#378ADD','#1D9E75','#7F77DD','#D85A30','#BA7517','#D4537E','#888780'];
+
+let CAP_CELULAS = [
+  {id:'backend',name:'Backend',lider:'Sergio Dzul',color:'#E24B4A',devs:[
+    {name:'Ana Lechuga',tasks:[{label:'Ext. Territorial',pct:.55},{label:'Legalario',pct:.30},{label:'Op. Diaria',pct:.05},{label:'Pago Pólizas',pct:.05},{label:'GitLab',pct:.05}]},
+    {name:'Jose Luis Reyes',tasks:[{label:'Pricing',pct:1.0}]},
+    {name:'Alberto Portillo',tasks:[{label:'Pricing Front',pct:.80},{label:'Divisional',pct:.20}]},
+    {name:'Andrix Alexander',tasks:[{label:'Pricing FE',pct:.90},{label:'Risk Check',pct:.10}]},
+    {name:'Enrique Tun',tasks:[{label:'Pricing',pct:.60},{label:'Front Turistas',pct:.40}]}
+  ]},
+  {id:'core',name:'Core',lider:'Mario Sanchez',color:'#EF9F27',devs:[
+    {name:'Armando Gutiérrez',tasks:[{label:'Ext. Territorial',pct:.50},{label:'ERP',pct:.30},{label:'Op. Diaria',pct:.20}]},
+    {name:'Silvia Díaz',tasks:[{label:'ERP',pct:.70},{label:'Op. Diaria',pct:.30}]},
+    {name:'Juan Juárez',tasks:[{label:'Ext. Territorial',pct:.60},{label:'ERP',pct:.40}]},
+    {name:'Karen Medina',tasks:[{label:'ERP',pct:1.0}]},
+    {name:'Baldomero',tasks:[{label:'Op. Diaria',pct:.80},{label:'ERP',pct:.20}]},
+    {name:'Aylenid',tasks:[{label:'Ext. Territorial',pct:1.0}]},
+    {name:'Moises',tasks:[{label:'ERP',pct:.50},{label:'Op. Diaria',pct:.50}]},
+    {name:'Liliana',tasks:[{label:'ERP',pct:.60},{label:'Ext. Territorial',pct:.40}]}
+  ]},
+  {id:'web',name:'Web',lider:'Mauricio Sanchez',color:'#639922',devs:[
+    {name:'Luis González',tasks:[{label:'Portal Clientes',pct:.70},{label:'Landing',pct:.30}]},
+    {name:'Luis Ramírez',tasks:[{label:'Landing',pct:.50},{label:'CMS',pct:.50}]},
+    {name:'Victor Peralta',tasks:[{label:'Portal Clientes',pct:1.0}]}
+  ]},
+  {id:'datos',name:'Ing. Datos',lider:'Ruben Berbena',color:'#7F77DD',devs:[
+    {name:'Francisco García',tasks:[{label:'Pipeline ETL',pct:.80},{label:'Reportes',pct:.20}]},
+    {name:'Victor Velázquez',tasks:[{label:'Reportes',pct:.60},{label:'Dashboard BI',pct:.40}]},
+    {name:'Mario García',tasks:[{label:'Dashboard BI',pct:1.0}]},
+    {name:'Camila Aranzuza',tasks:[{label:'Pipeline ETL',pct:.70},{label:'Reportes',pct:.30}]}
+  ]},
+  {id:'infra',name:'Infraestructura',lider:'Yoshio Martínez',color:'#1D9E75',devs:[
+    {name:'Enrique Sandoval',tasks:[{label:'Infra Cloud',pct:.80},{label:'DevOps',pct:.20}]},
+    {name:'Oscar Valdez',tasks:[{label:'DevOps',pct:.60},{label:'Seguridad',pct:.40}]},
+    {name:'Alberto Luna',tasks:[{label:'Infra Cloud',pct:1.0}]},
+    {name:'Laura Mantecon',tasks:[{label:'Soporte',pct:.70},{label:'Redes',pct:.30}]}
+  ]},
+  {id:'ia',name:'IA',lider:'Alan Escudero',color:'#185FA5',devs:[
+    {name:'Antonio Compean',tasks:[{label:'Modelo Pricing',pct:.70},{label:'Risk Model',pct:.30}]},
+    {name:'Hector Balan',tasks:[{label:'NLP Chatbot',pct:1.0}]},
+    {name:'Andres Pined',tasks:[{label:'UX/UI',pct:.80},{label:'Diseño',pct:.20}]}
+  ]}
+];
+
+const CAP_DAYS = (()=>{
+  const days=[];
+  const may=[4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31];
+  const jun=[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20];
+  const mayW=[4,10,11,17,18,24,25,31], junW=[1,7,8,14,15];
+  may.forEach(d=>days.push({m:'May',d,w:mayW.includes(d)}));
+  jun.forEach(d=>days.push({m:'Jun',d,w:junW.includes(d)}));
+  return days;
+})();
+
+const CAP_SPRINTS=[{label:'Sprint 1',start:0,end:13},{label:'Sprint 2',start:14,end:27},{label:'Sprint 3',start:28,end:41},{label:'Sprint 4',start:42,end:55}];
+let _capSel = null;
+
+function capPct(cel){const t=cel.devs.map(d=>d.tasks.reduce((a,t)=>a+t.pct,0));return Math.round((t.reduce((a,v)=>a+v,0)/cel.devs.length)*100);}
+function capColor(p){return p>85?'#E24B4A':p>74?'#EF9F27':'#639922';}
+function capTag(p){return p>85?'cb-over':p>74?'cb-warn':'cb-ok';}
+function capLbl(p){return p>85?'Sobrecarga':p>74?'En rango':'Disponible';}
+
+function renderCapacidad() {
+  const krow = document.getElementById('cap-krow');
+  if (!krow) return;
+  krow.innerHTML = CAP_CELULAS.map(cel => {
+    const p = capPct(cel);
+    const col = capColor(p);
+    return `<div class="cap-kpi${_capSel===cel.id?' sel':''}" onclick="selectCapCel('${cel.id}')">
+      <div class="cap-kv" style="color:${cel.color}">${cel.name}</div>
+      <div class="cap-kl">${cel.devs.length} devs · ${cel.lider}</div>
+      <div class="cap-mini"><div class="cap-mini-fill" style="width:${Math.min(p,100)}%;background:${col}"></div></div>
+      <div class="cap-pct" style="color:${col}">${p}% · ${capLbl(p)}</div>
+    </div>`;
+  }).join('');
+  if (_capSel) renderCapDetail(_capSel);
+}
+
+function selectCapCel(id) {
+  _capSel = id;
+  renderCapacidad();
+}
+
+function renderCapDetail(id) {
+  const cel = CAP_CELULAS.find(c=>c.id===id);
+  if (!cel) return;
+  const p = capPct(cel);
+  const totalTasks = cel.devs.reduce((a,d)=>a+d.tasks.length,0);
+  const overloaded = cel.devs.filter(d=>d.tasks.reduce((a,t)=>a+t.pct,0)>0.95).length;
+  const COL_DEV=160, COL_PCT=52, COL_DAY=26;
+  const totalW = COL_DEV+COL_PCT+(CAP_DAYS.length*COL_DAY);
+
+  let html = `<div class="cap-detail">
+    <div class="cap-detail-hdr">
+      <div>
+        <div style="font-size:14px;font-weight:700;color:${cel.color}">${cel.name} · ${cel.lider}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">${cel.devs.length} desarrolladores · ${totalTasks} tareas asignadas</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <span class="cap-badge ${capTag(p)}">${p}% capacidad</span>
+        ${overloaded>0?`<span class="cap-badge cb-over">${overloaded} sobrecargados</span>`:''}
+        <span class="cap-badge cb-info">Sprint Mayo–Jun 2026</span>
+      </div>
+    </div>
+    <div class="cap-stat-row">
+      <div class="cap-stat-box"><div class="cap-stat-v" style="color:var(--blue)">${cel.devs.length}</div><div class="cap-stat-l">Devs</div></div>
+      <div class="cap-stat-box"><div class="cap-stat-v" style="color:#27ae60">${totalTasks}</div><div class="cap-stat-l">Tareas</div></div>
+      <div class="cap-stat-box"><div class="cap-stat-v" style="color:${capColor(p)}">${p}%</div><div class="cap-stat-l">Carga prom.</div></div>
+      <div class="cap-stat-box"><div class="cap-stat-v" style="color:#c0392b">${overloaded}</div><div class="cap-stat-l">Sobrecargados</div></div>
+    </div>
+    <div class="cap-tl-wrap">
+    <div style="min-width:${totalW}px">`;
+
+  // Header días
+  html += `<div class="tl-hdr-row" style="grid-template-columns:${COL_DEV}px ${COL_PCT}px repeat(${CAP_DAYS.length},${COL_DAY}px);background:var(--surface2)">
+    <div class="tl-dev-cell" style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Dev / Tarea</div>
+    <div class="tl-pct-cell" style="font-size:10px;font-weight:700;color:var(--text3)">%</div>`;
+  let prevM='';
+  CAP_DAYS.forEach(day=>{
+    html+=`<div class="day-cell${day.w?' ':''}" style="${day.w?'background:var(--surface2)':''}">
+      <div class="day-lbl">${day.m!==prevM?day.m:''}</div>
+      <div class="day-num" style="${day.w?'color:var(--text3)':''}">${day.d}</div>
+    </div>`;
+    prevM=day.m;
+  });
+  html+='</div>';
+
+  // Sprints y devs
+  CAP_SPRINTS.forEach(sp=>{
+    html+=`<div style="display:grid;grid-template-columns:${COL_DEV}px ${COL_PCT}px repeat(${CAP_DAYS.length},${COL_DAY}px);background:var(--surface2);border-bottom:.5px solid var(--border)">
+      <div style="padding:3px 10px;font-size:9px;font-weight:700;color:var(--text3);letter-spacing:.05em;grid-column:1/3;border-right:.5px solid var(--border);text-transform:uppercase">${sp.label}</div>`;
+    CAP_DAYS.forEach((day,i)=>{
+      const inS=i>=sp.start&&i<=sp.end;
+      html+=`<div style="border-right:.5px solid var(--border);background:${inS?'rgba(26,95,180,.04)':'transparent'};height:20px"></div>`;
+    });
+    html+='</div>';
+
+    cel.devs.forEach((dev,di)=>{
+      const devTotal=dev.tasks.reduce((a,t)=>a+t.pct,0);
+      const isOver=devTotal>0.95;
+      dev.tasks.forEach((task,ti)=>{
+        const col=CAP_TASK_COLORS[ti%CAP_TASK_COLORS.length];
+        const isFirst=ti===0;
+        html+=`<div class="tl-row" style="grid-template-columns:${COL_DEV}px ${COL_PCT}px repeat(${CAP_DAYS.length},${COL_DAY}px)">
+          <div class="tl-dev-cell">
+            ${isFirst?`<div class="tl-dev-name" style="${isOver?'color:#c0392b;':''}">${dev.name}${isOver?' ⚠️':''}</div>`:''}
+            <div class="tl-task-name" style="color:${col}">${task.label}</div>
+          </div>
+          <div class="tl-pct-cell" style="color:${col}">${Math.round(task.pct*100)}%</div>`;
+        CAP_DAYS.forEach((day,i)=>{
+          const inS=i>=sp.start&&i<=sp.end;
+          if(!inS){html+=`<div style="border-right:.5px solid var(--border);height:28px"></div>`;return;}
+          if(day.w){html+=`<div style="border-right:.5px solid var(--border);height:28px;background:var(--surface2)"></div>`;return;}
+          const alpha=(0.15+task.pct*0.75).toFixed(2);
+          html+=`<div style="border-right:.5px solid var(--border);height:28px;padding:3px 2px">
+            <div style="height:20px;border-radius:2px;background:${col};opacity:${alpha}"></div>
+          </div>`;
+        });
+        html+='</div>';
+      });
+      if(di<cel.devs.length-1){
+        html+=`<div style="height:3px;background:var(--surface2);border-bottom:.5px solid var(--border);grid-column:1/-1;display:grid;grid-template-columns:${COL_DEV}px ${COL_PCT}px repeat(${CAP_DAYS.length},${COL_DAY}px)"><div style="grid-column:1/-1"></div></div>`;
+      }
+    });
+  });
+
+  html+='</div></div></div>';
+  document.getElementById('cap-detail-area').innerHTML = html;
+}
+
+function exportCapacidadHTML() {
+  const now = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+  const kpisHTML = CAP_CELULAS.map(cel=>{
+    const p=capPct(cel); const col=capColor(p);
+    return `<div style="background:#fff;border:.5px solid #ddd;border-radius:8px;padding:12px 14px">
+      <div style="font-size:14px;font-weight:700;color:${cel.color};margin-bottom:2px">${cel.name}</div>
+      <div style="font-size:11px;color:#888;margin-bottom:8px">${cel.devs.length} devs · ${cel.lider}</div>
+      <div style="height:5px;background:#eee;border-radius:3px;overflow:hidden;margin-bottom:4px">
+        <div style="height:100%;width:${Math.min(capPct(cel),100)}%;background:${col};border-radius:3px"></div>
+      </div>
+      <div style="font-size:11px;font-weight:700;color:${col}">${p}% · ${capLbl(p)}</div>
+    </div>`;
+  }).join('');
+
+  const detallesHTML = CAP_CELULAS.map(cel=>{
+    const p=capPct(cel); const totalTasks=cel.devs.reduce((a,d)=>a+d.tasks.length,0);
+    const overloaded=cel.devs.filter(d=>d.tasks.reduce((a,t)=>a+t.pct,0)>0.95).length;
+    return `<div style="background:#fff;border:.5px solid #ddd;border-radius:10px;overflow:hidden;margin-bottom:1.25rem;page-break-inside:avoid">
+      <div style="padding:12px 16px;background:#f7f6f3;border-bottom:.5px solid #ddd;display:flex;align-items:center;justify-content:space-between">
+        <div><div style="font-size:13px;font-weight:700;color:${cel.color}">${cel.name} · ${cel.lider}</div>
+        <div style="font-size:11px;color:#888;margin-top:2px">${cel.devs.length} devs · ${totalTasks} tareas</div></div>
+        <span style="font-size:10px;padding:3px 9px;border-radius:999px;font-weight:700;background:${capColor(p)}22;color:${capColor(p)}">${p}% ${capLbl(p)}</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#f0ede8">
+          <th style="text-align:left;padding:7px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#888">Desarrollador</th>
+          <th style="text-align:left;padding:7px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#888">Tarea</th>
+          <th style="text-align:center;padding:7px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#888">% Dedicación</th>
+          <th style="text-align:left;padding:7px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#888">Carga total</th>
+        </tr></thead>
+        <tbody>${cel.devs.map((dev,i)=>{
+          const devTotal=Math.round(dev.tasks.reduce((a,t)=>a+t.pct,0)*100);
+          const isOver=devTotal>95;
+          return dev.tasks.map((task,ti)=>`<tr style="border-bottom:.5px solid #eee;${i%2===0?'background:#fafaf9':''}">
+            <td style="padding:7px 12px;font-weight:${ti===0?'700':'400'};color:${isOver&&ti===0?'#c0392b':'inherit'}">${ti===0?dev.name+(isOver?' ⚠️':''):''}</td>
+            <td style="padding:7px 12px;color:#1a5fb4">${task.label}</td>
+            <td style="padding:7px 12px;text-align:center;font-weight:700">${Math.round(task.pct*100)}%</td>
+            <td style="padding:7px 12px">${ti===0?`<div style="display:inline-flex;align-items:center;gap:6px"><div style="width:60px;height:5px;background:#eee;border-radius:3px;overflow:hidden"><div style="height:100%;width:${Math.min(devTotal,100)}%;background:${isOver?'#c0392b':devTotal>74?'#e67e22':'#27ae60'};border-radius:3px"></div></div><span style="font-size:11px;font-weight:700;color:${isOver?'#c0392b':devTotal>74?'#e67e22':'#27ae60'}">${devTotal}%</span></div>`:''}</td>
+          </tr>`).join('');
+        }).join('')}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Capacidad del Equipo · PMO TI</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,'Segoe UI',sans-serif;color:#181816;background:#f5f4f1;font-size:13px}
+.body{max-width:1100px;margin:0 auto;padding:2rem}
+@media print{body{background:#fff}.body{padding:.5rem}@page{margin:1.5cm;size:A4 landscape}}</style>
+</head><body><div class="body">
+<div style="background:linear-gradient(135deg,#0d3b78,#1a5fb4);color:#fff;border-radius:12px;padding:2rem;margin-bottom:1.5rem">
+  <div style="font-size:22px;font-weight:900;margin-bottom:4px">📊 Capacidad del Equipo TI</div>
+  <div style="font-size:12px;opacity:.8">Sprint Mayo–Junio 2026 · Generado el ${now}</div>
+</div>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:1.5rem">${kpisHTML}</div>
+${detallesHTML}
+<div style="text-align:center;padding:1.5rem;font-size:11px;color:#888;border-top:.5px solid #eee;margin-top:1rem">PMO · TI · ${now}</div>
+</div></body></html>`;
+
+  const blob=new Blob([html],{type:'text/html'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`Capacidad-PMO-${new Date().toISOString().slice(0,10)}.html`;
+  a.click();
+  toast('📄 Reporte de capacidad exportado');
+}
 </script>
 </body>
 </html>
