@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>PMO · Gestión de Portafolio TI</title>
-<!-- v9.3 - Capacidad ANA Net 2.0: tarjetas area, pills devs, ocupacion temporal, exportHTML - 2026-05-27 -->
+<!-- v9.3 - fix error visual + Control Cambios + Historico Estatus - 2026-06-04 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -276,8 +276,6 @@ setTimeout(() => {
 }, 2000);
 </script>
 
-// ── Datos sincronizados por startDataSync() dentro del módulo Firebase ──────
-</script>
 <style>
 :root{
   --bg:#f7f6f3;--surface:#fff;--surface2:#f0ede8;
@@ -578,7 +576,8 @@ tr:hover td{background:var(--bg)}
     <button class="nav-btn" onclick="goPage('graficos',this)"><span class="nav-icon">📊</span>Gráficos</button>
     <button class="nav-btn" onclick="goPage('riesgos',this)"><span class="nav-icon">⚠️</span>Inventario Riesgos</button>
     <button class="nav-btn" onclick="goPage('historico',this)"><span class="nav-icon">🕐</span>Histórico</button>
-    <button class="nav-btn" onclick="goPage('capacidad',this)"><span class="nav-icon">⚡</span>Capacidad</button>
+    <button class="nav-btn" onclick="goPage('cambios',this)"><span class="nav-icon">🔄</span>Control Cambios</button>
+    <button class="nav-btn" onclick="goPage('estatus_hist',this)"><span class="nav-icon">📉</span>Histórico Estatus</button>
     <button class="nav-btn" id="nav-usuarios" onclick="goPage('usuarios',this);window.loadUsersList()" style="display:none"><span class="nav-icon">👥</span>Usuarios</button>
     <button class="nav-btn" onclick="doLogout()" style="margin-top:4px;color:var(--red);border-color:var(--red-bg)"><span class="nav-icon">🚪</span>Cerrar sesión</button>
   </nav>
@@ -872,123 +871,127 @@ tr:hover td{background:var(--bg)}
     </div>
   </div>
 
-  <!-- ══ CAPACIDAD ══════════════════════════════════════════════════════════ -->
-  <div class="page" id="page-capacidad">
+  <!-- ══ CONTROL DE CAMBIOS ══════════════════════════════════════════════════ -->
+  <div class="page" id="page-cambios">
     <div class="page-header">
-      <div>
-        <div class="page-title">Capacidad del Equipo</div>
-        <div class="page-sub" id="cap-sub">ANA Net 2.0 · Módulo de capacidad operativa por área</div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <label style="cursor:pointer">
-          <input type="file" id="cap-file-input" accept=".xlsx,.xls" style="display:none" onchange="loadCapExcel(this)">
-          <div class="btn btn-primary" onclick="document.getElementById('cap-file-input').click()">📂 Cargar Excel</div>
-        </label>
-        <button class="btn btn-ghost" id="cap-export-btn" onclick="exportCapHTML()" style="display:none;border-color:var(--blue-t);color:var(--blue-t);font-weight:700">📄 Exportar HTML</button>
-      </div>
+      <div><div class="page-title">Control de Cambios</div><div class="page-sub" id="cambios-sub">Historial de modificaciones realizadas en proyectos e iniciativas</div></div>
+      <button class="btn btn-ghost" onclick="exportCambiosHTML()" style="border-color:var(--blue-t);color:var(--blue-t);font-weight:700">📄 Exportar</button>
     </div>
-
     <style>
-    /* Filtros capacidad */
-    #cap-filters{display:none;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:1.25rem;background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);padding:12px 14px;box-shadow:var(--shadow)}
-    #cap-filters select,#cap-filters input{font-size:13px;padding:6px 10px;border:.5px solid var(--border2);border-radius:var(--rs);background:var(--surface);height:34px;color:var(--text)}
-    /* Tarjetas área */
-    .cap-area-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px;margin-bottom:1.5rem}
-    .cap-area-card{background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .12s}
-    .cap-area-card:hover{border-color:var(--blue);box-shadow:0 4px 16px rgba(26,95,180,.14);transform:translateY(-1px)}
-    .cap-area-card.active{border:2px solid var(--blue);box-shadow:0 4px 16px rgba(26,95,180,.2)}
-    .cap-area-hdr{padding:14px 16px;border-bottom:.5px solid var(--border)}
-    .cap-area-name{font-size:15px;font-weight:800;margin-bottom:3px}
-    .cap-area-meta{font-size:11px;color:var(--text3);display:flex;gap:12px;margin-top:4px}
-    .cap-bar-wrap{height:8px;background:var(--border2);border-radius:4px;overflow:hidden;margin:8px 0 5px}
-    .cap-bar-fill{height:100%;border-radius:4px;transition:width .5s cubic-bezier(.4,0,.2,1)}
-    .cap-sem-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
-    /* Dev pills */
-    .cap-dev-pills{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px;padding-top:10px;border-top:.5px solid var(--border)}
-    .cap-dev-pill{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid transparent;transition:all .12s;user-select:none}
-    .cap-dev-pill:hover{filter:brightness(.96)}
-    .cap-dev-pill.sel{box-shadow:0 0 0 2px var(--blue)}
-    /* Panel detalle */
-    .cap-detail-panel{background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);margin-top:1.25rem;animation:fadeIn .2s ease}
-    @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-    .cap-detail-hdr{padding:14px 20px;background:var(--surface2);border-bottom:.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
-    /* Dev card detalle */
-    .cap-dev-card{background:var(--surface2);border-radius:var(--r);overflow:hidden;border:.5px solid var(--border)}
-    .cap-dev-card-hdr{padding:12px 14px;display:flex;align-items:center;gap:10px}
-    .cap-dev-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px;font-weight:900;color:#fff}
-    /* Ocupación temporal */
-    .cap-ocp-table{width:100%;border-collapse:collapse}
-    .cap-ocp-table th{text-align:left;padding:9px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);background:var(--surface2);border-bottom:.5px solid var(--border)}
-    .cap-ocp-table td{padding:9px 12px;border-bottom:.5px solid var(--border);vertical-align:middle}
-    .cap-ocp-table tr:last-child td{border-bottom:none}
-    .cap-ocp-table tr:nth-child(even) td{background:var(--surface2)}
-    /* Mini bar */
-    .mini-bar{display:flex;align-items:center;gap:6px}
-    .mini-bar-bg{width:60px;height:5px;background:var(--border2);border-radius:3px;overflow:hidden;flex-shrink:0}
-    .mini-bar-fill{height:100%;border-radius:3px}
+    .chg-filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:1.25rem;background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);padding:12px 14px;box-shadow:var(--shadow)}
+    .chg-filters select,.chg-filters input{font-size:13px;padding:6px 10px;border:.5px solid var(--border2);border-radius:var(--rs);background:var(--surface);height:34px;color:var(--text)}
+    .chg-timeline{display:flex;flex-direction:column;gap:0}
+    .chg-item{display:flex;gap:14px;padding:0 0 16px 0;position:relative}
+    .chg-item:last-child{padding-bottom:0}
+    .chg-line{display:flex;flex-direction:column;align-items:center;flex-shrink:0;width:36px}
+    .chg-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:3px;border:2px solid var(--surface);box-shadow:0 0 0 2px currentColor}
+    .chg-vline{flex:1;width:2px;background:var(--border2);margin-top:4px}
+    .chg-card{background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);padding:12px 16px;flex:1;box-shadow:var(--shadow)}
+    .chg-header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}
+    .chg-proyecto{font-size:13px;font-weight:700;color:var(--text)}
+    .chg-meta{font-size:11px;color:var(--text3);margin-top:2px}
+    .chg-changes{display:flex;flex-direction:column;gap:5px}
+    .chg-field{display:flex;align-items:center;gap:8px;font-size:12px;flex-wrap:wrap}
+    .chg-field-name{font-weight:700;color:var(--text2);min-width:90px;flex-shrink:0}
+    .chg-old{background:#fbeaea;color:#791f1f;padding:2px 8px;border-radius:4px;text-decoration:line-through;opacity:.8}
+    .chg-new{background:#e4f2de;color:#1b5e20;padding:2px 8px;border-radius:4px;font-weight:600}
+    .chg-arrow{color:var(--text3);font-size:10px}
     </style>
-
     <!-- Filtros -->
-    <div id="cap-filters">
-      <select id="cap-f-area" onchange="applyCapFilters()"><option value="">Todas las áreas</option></select>
-      <select id="cap-f-dev"  onchange="applyCapFilters()"><option value="">Todos los devs</option></select>
-      <select id="cap-f-tipo" onchange="applyCapFilters()">
+    <div class="chg-filters">
+      <input type="text" id="chg-q" placeholder="🔍 Buscar proyecto..." oninput="renderCambios()">
+      <select id="chg-f-campo" onchange="renderCambios()">
+        <option value="">Todos los campos</option>
+        <option value="_estatus">Estatus</option>
+        <option value="_avance">Avance</option>
+        <option value="_pm">PM</option>
+        <option value="_fase">Fase</option>
+        <option value="_prioridad">Prioridad</option>
+      </select>
+      <select id="chg-f-tipo" onchange="renderCambios()">
         <option value="">Todos los tipos</option>
         <option value="Proyecto">Proyecto</option>
-        <option value="Incidencia">Incidencia</option>
         <option value="Requerimiento">Requerimiento</option>
+        <option value="Épica">Épica</option>
       </select>
-      <select id="cap-f-vista" onchange="applyCapFilters()">
-        <option value="area">Vista por área</option>
-        <option value="dia">Ocupación por día</option>
-        <option value="semana">Ocupación por semana</option>
-        <option value="mes">Ocupación por mes</option>
-      </select>
-      <button class="btn btn-ghost" onclick="clearCapFilters()" style="height:34px">✕ Limpiar</button>
-      <span id="cap-count" style="font-size:12px;color:var(--text3);font-weight:600"></span>
+      <button class="btn btn-ghost" onclick="document.getElementById('chg-q').value='';document.getElementById('chg-f-campo').value='';document.getElementById('chg-f-tipo').value='';renderCambios()" style="height:34px">✕ Limpiar</button>
+      <span id="chg-count" style="font-size:12px;color:var(--text3);font-weight:600"></span>
     </div>
-
-    <!-- Contenido -->
-    <div id="cap-content">
-      <!-- Estado vacío -->
-      <div id="cap-empty" style="background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);padding:3rem;text-align:center;box-shadow:var(--shadow)">
-        <div style="font-size:44px;margin-bottom:14px">⚡</div>
-        <div style="font-size:16px;font-weight:800;margin-bottom:8px">Módulo de Capacidad Operativa</div>
-        <div style="font-size:13px;color:var(--text3);margin-bottom:24px;max-width:520px;margin-left:auto;margin-right:auto">ANA Net 2.0 · Visualiza y gestiona la asignación y ocupación de los desarrolladores por área para optimizar la planeación de proyectos e incidencias.</div>
-        <div style="display:inline-flex;gap:20px;background:var(--surface2);border-radius:var(--r);padding:18px 22px;font-size:12px;color:var(--text2);text-align:left;flex-wrap:wrap;border:.5px solid var(--border)">
-          <div>
-            <div style="font-weight:700;margin-bottom:8px;color:var(--text)">📋 Columnas requeridas en Excel:</div>
-            <div style="margin-bottom:3px">• <b>Clasificación</b> — Proyecto / Incidencia / Requerimiento</div>
-            <div style="margin-bottom:3px">• <b>Nombre</b> — Nombre del proyecto o incidencia</div>
-            <div style="margin-bottom:3px">• <b>Área</b> — Célula o equipo</div>
-            <div style="margin-bottom:3px">• <b>Líder</b> — Tech Lead responsable</div>
-            <div style="margin-bottom:3px">• <b>Desarrollador</b> — Nombre del dev</div>
-            <div style="margin-bottom:3px">• <b>% Asignado</b> — Porcentaje (0–100)</div>
-            <div>• <b>Semáforo</b> — Estado de asignación</div>
-          </div>
-          <div>
-            <div style="font-weight:700;margin-bottom:8px;color:var(--text)">🚦 Semáforo de colores:</div>
-            <div style="margin-bottom:6px;display:flex;align-items:center;gap:7px"><span style="width:11px;height:11px;border-radius:50%;background:#c0392b;display:inline-block;flex-shrink:0"></span><span><b>Rojo</b> — Sobre asignado (&gt;100%)</span></div>
-            <div style="margin-bottom:6px;display:flex;align-items:center;gap:7px"><span style="width:11px;height:11px;border-radius:50%;background:#27ae60;display:inline-block;flex-shrink:0"></span><span><b>Verde</b> — Asignado</span></div>
-            <div style="margin-bottom:6px;display:flex;align-items:center;gap:7px"><span style="width:11px;height:11px;border-radius:50%;background:#e67e22;display:inline-block;flex-shrink:0"></span><span><b>Amarillo</b> — Sin asignación</span></div>
-            <div style="display:flex;align-items:center;gap:7px"><span style="width:11px;height:11px;border-radius:50%;background:#888780;display:inline-block;flex-shrink:0"></span><span><b>Gris</b> — Vacaciones</span></div>
-          </div>
-        </div>
-        <div style="margin-top:18px">
-          <button class="btn btn-primary" onclick="document.getElementById('cap-file-input').click()" style="font-size:14px;padding:10px 24px">📂 Cargar Excel de Capacidad</button>
-        </div>
+    <div id="cambios-content">
+      <div id="cambios-empty" style="background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);padding:3rem;text-align:center;box-shadow:var(--shadow)">
+        <div style="font-size:40px;margin-bottom:12px">🔄</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px">Control de Cambios</div>
+        <div style="font-size:13px;color:var(--text3)">Los cambios se registran automáticamente cuando editas un campo en el módulo Data.<br>Carga datos y realiza ediciones para ver el historial aquí.</div>
       </div>
+      <div id="cambios-list" style="display:none" class="chg-timeline"></div>
+    </div>
+  </div>
 
-      <!-- Dashboard -->
-      <div id="cap-main" style="display:none">
-        <!-- KPIs globales -->
-        <div id="cap-kpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:1.25rem"></div>
-        <!-- Tarjetas área -->
-        <div id="cap-area-grid" class="cap-area-grid"></div>
-        <!-- Panel detalle devs seleccionados -->
-        <div id="cap-detail-panel" class="cap-detail-panel" style="display:none"></div>
-        <!-- Vista ocupación temporal -->
-        <div id="cap-ocp-panel" style="display:none;background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);margin-top:1.25rem"></div>
+  <!-- ══ HISTÓRICO ESTATUS ════════════════════════════════════════════════════ -->
+  <div class="page" id="page-estatus_hist">
+    <div class="page-header">
+      <div><div class="page-title">Histórico de Estatus</div><div class="page-sub" id="eh-sub">Trazabilidad de cambios de estatus por proyecto</div></div>
+      <button class="btn btn-ghost" onclick="exportEstatusHTML()" style="border-color:var(--blue-t);color:var(--blue-t);font-weight:700">📄 Exportar</button>
+    </div>
+    <style>
+    .eh-kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:1.25rem}
+    .eh-kpi{background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);padding:12px 14px;box-shadow:var(--shadow)}
+    .eh-kpi-v{font-size:26px;font-weight:900;line-height:1}
+    .eh-kpi-l{font-size:10px;color:var(--text3);margin-top:4px;text-transform:uppercase;letter-spacing:.4px}
+    .eh-filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:1.25rem;background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);padding:12px 14px;box-shadow:var(--shadow)}
+    .eh-filters select,.eh-filters input{font-size:13px;padding:6px 10px;border:.5px solid var(--border2);border-radius:var(--rs);background:var(--surface);height:34px;color:var(--text)}
+    .eh-table{width:100%;border-collapse:collapse}
+    .eh-table th{text-align:left;padding:10px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);background:var(--surface2);border-bottom:.5px solid var(--border);position:sticky;top:0}
+    .eh-table td{padding:10px 12px;border-bottom:.5px solid var(--border);font-size:13px;vertical-align:middle}
+    .eh-table tr:nth-child(even) td{background:var(--surface2)}
+    .eh-table tr:hover td{background:var(--blue-bg)}
+    .eh-sem{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:5px;font-size:11px;font-weight:700}
+    .eh-retraso{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700}
+    .eh-hist-pills{display:flex;flex-wrap:wrap;gap:4px}
+    .eh-hist-pill{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;border:.5px solid transparent}
+    </style>
+    <!-- KPIs -->
+    <div class="eh-kpis" id="eh-kpis"></div>
+    <!-- Filtros -->
+    <div class="eh-filters">
+      <input type="text" id="eh-q" placeholder="🔍 Buscar proyecto..." oninput="renderEstatusHist()">
+      <select id="eh-f-estatus" onchange="renderEstatusHist()"><option value="">Todos los estatus</option></select>
+      <select id="eh-f-tipo" onchange="renderEstatusHist()">
+        <option value="">Todos los tipos</option>
+        <option value="Proyecto">Proyecto</option>
+        <option value="Requerimiento">Requerimiento</option>
+        <option value="Épica">Épica</option>
+      </select>
+      <select id="eh-f-retraso" onchange="renderEstatusHist()">
+        <option value="">Con y sin retraso</option>
+        <option value="si">Con retraso</option>
+        <option value="no">Sin retraso</option>
+      </select>
+      <button class="btn btn-ghost" onclick="['eh-q','eh-f-estatus','eh-f-tipo','eh-f-retraso'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=''});renderEstatusHist()" style="height:34px">✕ Limpiar</button>
+      <span id="eh-count" style="font-size:12px;color:var(--text3);font-weight:600"></span>
+    </div>
+    <!-- Contenido -->
+    <div id="eh-content">
+      <div id="eh-empty" style="background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);padding:3rem;text-align:center;box-shadow:var(--shadow)">
+        <div style="font-size:40px;margin-bottom:12px">📉</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px">Histórico de Estatus</div>
+        <div style="font-size:13px;color:var(--text3)">Carga datos del portafolio para ver la trazabilidad de estatus de cada proyecto.</div>
+      </div>
+      <div id="eh-table-wrap" style="display:none;background:var(--surface);border:.5px solid var(--border);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)">
+        <div style="overflow-x:auto;max-height:65vh;overflow-y:auto">
+          <table class="eh-table">
+            <thead><tr>
+              <th>Tipo</th>
+              <th>Proyecto / Iniciativa</th>
+              <th>PM</th>
+              <th>Estatus Actual</th>
+              <th>Historial Estatus</th>
+              <th style="text-align:center">Retraso</th>
+              <th>Último cambio</th>
+            </tr></thead>
+            <tbody id="eh-tbody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -1216,7 +1219,8 @@ function goPage(name, btn) {
   if (name === 'graficos' && DB.length)  renderCharts();
   if (name === 'riesgos')                { populateRFilters(); applyRFilters(); }
   if (name === 'historico')              renderSnaps();
-  if (name === 'capacidad')              renderCapacidad();
+  if (name === 'cambios')                renderCambios();
+  if (name === 'estatus_hist')           renderEstatusHist();
   if (name === 'usuarios')              { if(typeof window.loadUsersList==='function') window.loadUsersList(); }
 }
 
@@ -4484,564 +4488,339 @@ window.toast             = toast;
 window.renderSnaps       = renderSnaps;
 
 // ══════════════════════════════════════════════════════════════════════════════
-// MÓDULO CAPACIDAD — ANA Net 2.0
+// CONTROL DE CAMBIOS — registro automático de ediciones en Data
 // ══════════════════════════════════════════════════════════════════════════════
-let CAP_DATA     = [];   // todos los registros cargados
-let CAP_FILTERED = [];   // tras aplicar filtros
-let CAP_SEL_AREA = null; // área activa (tarjeta clickeada)
-let CAP_SEL_DEVS = [];   // devs seleccionados (pills)
+let CAMBIOS = []; // { ts, proyecto, tipo, campo, valorAnterior, valorNuevo, usuario }
 
-// ── Semáforo ──────────────────────────────────────────────────────────────────
-const CAP_SEM = {
-  sobre:      { bg:'#fbeaea', color:'#791f1f', border:'#f5c0c0', dot:'#c0392b', label:'Sobre asignado',  hex:'#c0392b' },
-  asignado:   { bg:'#e4f2de', color:'#1b5e20', border:'#a5d6a7', dot:'#27ae60', label:'Asignado',        hex:'#27ae60' },
-  sin:        { bg:'#fff8e1', color:'#633806', border:'#ffe082', dot:'#e67e22', label:'Sin asignación',  hex:'#e67e22' },
-  vacaciones: { bg:'#f1f0ee', color:'#4a4a48', border:'#d3d1c7', dot:'#888780', label:'Vacaciones',      hex:'#888780' },
+const CAMPOS_LABELS = {
+  _estatus:'Estatus', _avance:'Avance %', _pm:'PM', _fase:'Fase',
+  _prioridad:'Prioridad', _resp:'Resp. TI', _dev:'Desarrollador',
+  _area:'Área', _nombre:'Nombre', _tipo:'Tipo',
 };
 
-function normCapSem(v) {
-  if (!v) return 'sin';
-  const s = v.toString().toLowerCase().trim()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ');
-  if (s.includes('sobre') || s.includes('over') || s.includes('excede')) return 'sobre';
-  if (s.includes('vac')   || s.includes('ausent') || s.includes('permis')) return 'vacaciones';
-  if (s.includes('sin')   || s.includes('libre')  || s.includes('dispon') || s.includes('no asig') || s.includes('sin asig')) return 'sin';
-  if (s.includes('asig')  || s.includes('assign')  || s.includes('ocup')) return 'asignado';
-  return 'sin';
-}
-function semCap(k) { return CAP_SEM[k] || CAP_SEM.sin; }
-
-function semCapFromPct(pct, rawSem) {
-  if (rawSem === 'vacaciones') return 'vacaciones';
-  if (pct > 100) return 'sobre';
-  if (pct === 0) return 'sin';
-  return 'asignado';
-}
-
-// ── Validación del Excel ───────────────────────────────────────────────────────
-function validateCapExcel(rows) {
-  const errors = [];
-  const REQUIRED = ['_area','_dev','_pct'];
-  rows.forEach((r, i) => {
-    REQUIRED.forEach(f => { if (!r[f] && r[f] !== 0) errors.push(`Fila ${i+4}: falta ${f.replace('_','')}`); });
-    if (r._pct > 200) errors.push(`Fila ${i+4}: % asignado muy alto (${r._pct})`);
-    if (r._pct < 0)   errors.push(`Fila ${i+4}: % asignado negativo`);
-  });
-  return errors;
-}
-
-// ── Carga Excel ────────────────────────────────────────────────────────────────
-function loadCapExcel(input) {
-  const file = input.files[0]; if (!file) return;
-  if (!file.name.match(/\.xlsx?$/i)) { toast('⚠️ Solo se aceptan archivos .xlsx o .xls','error'); return; }
-  toast('📂 Validando y cargando Excel...');
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const wb   = XLSX.read(e.target.result, { type:'array', cellDates:true });
-      const ws   = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { defval:'' });
-      if (!rows.length) { toast('⚠️ El archivo está vacío','error'); return; }
-
-      // Mapeo flexible de columnas
-      const FMAP = {
-        _tipo:   ['clasificacion','clasificación','tipo','type','clasificacion tipo'],
-        _nombre: ['nombre','name','proyecto','incidencia','requerimiento','iniciativa','descripcion','descripción'],
-        _area:   ['area','área','celula','célula','equipo','squad','team'],
-        _lider:  ['lider','líder','tech lead','tl','lead','responsable'],
-        _dev:    ['desarrollador','developer','dev','recurso','nombre dev','nombre desarrollador'],
-        _pct:    ['porcentaje','%','pct','asignacion','asignación','dedicacion','dedicación','% asignado','porcentaje asignado','ocupacion'],
-        _sem:    ['semaforo','semáforo','status','estado','estatus','tipo asignacion','tipo asignación','asignacion'],
-        _fecha:  ['fecha','date','inicio','start','fecha inicio'],
-        _fechafin:['fecha fin','end','fin','fecha_fin'],
-      };
-      const colMap = {};
-      Object.keys(rows[0]).forEach(col => {
-        const c = col.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
-        Object.entries(FMAP).forEach(([f,aliases]) => {
-          if (!colMap[f] && aliases.some(a => c.includes(a))) colMap[f] = col;
-        });
-      });
-
-      const parsed = rows.map((r, i) => {
-        const rawPct = String(r[colMap._pct]||'0').replace('%','').trim();
-        let pct = parseFloat(rawPct) || 0;
-        if (pct > 0 && pct <= 1) pct = Math.round(pct * 100); // 0.55 → 55
-        const rawSem = normCapSem(r[colMap._sem]);
-        return {
-          _id:      i,
-          _tipo:    String(r[colMap._tipo]    ||'').trim() || 'Requerimiento',
-          _nombre:  String(r[colMap._nombre]  ||'').trim(),
-          _area:    String(r[colMap._area]    ||'').trim(),
-          _lider:   String(r[colMap._lider]   ||'').trim(),
-          _dev:     String(r[colMap._dev]     ||'').trim(),
-          _pct:     Math.round(pct),
-          _semRaw:  rawSem,
-          _sem:     semCapFromPct(pct, rawSem),
-          _fecha:   r[colMap._fecha]    ? new Date(r[colMap._fecha])    : null,
-          _fechaFin:r[colMap._fechafin] ? new Date(r[colMap._fechafin]) : null,
-        };
-      }).filter(r => r._dev && r._area);
-
-      // Validar
-      const errors = validateCapExcel(parsed);
-      if (errors.length) {
-        toast(`⚠️ ${errors.length} error(es) encontrados:\n${errors.slice(0,3).join('\n')}`, 'error');
-        if (errors.length > 3) toast(`...y ${errors.length-3} más. Revisa el archivo.`,'error');
-        return;
+// Interceptar guardado de edición para registrar cambio
+const _origSaveEdit = window.saveEdit;
+window.saveEditWithTracking = function(idx) {
+  const old = filteredDB[idx] ? {...filteredDB[idx]} : null;
+  if (typeof saveEdit === 'function') saveEdit(idx);
+  // Registrar cambio después de guardar
+  setTimeout(() => {
+    const nuevo = filteredDB[idx];
+    if (!old || !nuevo) return;
+    const camposMonitoreados = ['_estatus','_avance','_pm','_fase','_prioridad','_resp','_dev','_area'];
+    camposMonitoreados.forEach(campo => {
+      if (String(old[campo]||'') !== String(nuevo[campo]||'')) {
+        registrarCambio(nuevo._nombre||'Sin nombre', nuevo._tipo||'', campo, old[campo], nuevo[campo]);
       }
+    });
+  }, 300);
+};
 
-      CAP_DATA     = parsed;
-      CAP_FILTERED = parsed;
-      CAP_SEL_AREA = null;
-      CAP_SEL_DEVS = [];
-
-      const areas = [...new Set(parsed.map(d=>d._area).filter(Boolean))].length;
-      const devs  = [...new Set(parsed.map(d=>d._dev).filter(Boolean))].length;
-      toast(`✅ ${parsed.length} registros cargados · ${areas} áreas · ${devs} devs`);
-
-      document.getElementById('cap-empty').style.display = 'none';
-      document.getElementById('cap-main').style.display  = '';
-      document.getElementById('cap-filters').style.display = 'flex';
-      document.getElementById('cap-export-btn').style.display = '';
-
-      populateCapFilters();
-      applyCapFilters();
-    } catch(err) {
-      console.error(err);
-      toast('❌ Error al leer el archivo: ' + err.message, 'error');
-    }
+function registrarCambio(proyecto, tipo, campo, valorAnterior, valorNuevo) {
+  const cambio = {
+    ts:            new Date().toISOString(),
+    proyecto,
+    tipo,
+    campo,
+    valorAnterior: String(valorAnterior||'—'),
+    valorNuevo:    String(valorNuevo||'—'),
+    usuario:       window._currentUser?.email?.split('@')[0] || 'Usuario',
   };
-  reader.readAsArrayBuffer(file);
-  input.value = '';
+  CAMBIOS.unshift(cambio);
+  // Persistir en localStorage
+  try { localStorage.setItem('pmo_cambios', JSON.stringify(CAMBIOS.slice(0,200))); } catch(e) {}
+  // Actualizar badge
+  const badge = document.getElementById('cambios-badge');
+  if (badge) { badge.textContent = CAMBIOS.length; badge.style.display=''; }
 }
 
-// ── Poblar filtros ─────────────────────────────────────────────────────────────
-function populateCapFilters() {
-  const areas = [...new Set(CAP_DATA.map(d=>d._area).filter(Boolean))].sort();
-  const devs  = [...new Set(CAP_DATA.map(d=>d._dev).filter(Boolean))].sort();
-  const selA = document.getElementById('cap-f-area');
-  const selD = document.getElementById('cap-f-dev');
-  if (selA) { const sv=selA.value; selA.innerHTML='<option value="">Todas las áreas</option>'+areas.map(a=>`<option${a===sv?' selected':''}>${a}</option>`).join(''); }
-  if (selD) { const sv=selD.value; selD.innerHTML='<option value="">Todos los devs</option>'+devs.map(d=>`<option${d===sv?' selected':''}>${d}</option>`).join(''); }
+function loadCambiosFromStorage() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('pmo_cambios') || '[]');
+    CAMBIOS = stored;
+  } catch(e) { CAMBIOS = []; }
 }
 
-// ── Aplicar filtros ────────────────────────────────────────────────────────────
-function applyCapFilters() {
-  const fa = document.getElementById('cap-f-area')?.value  || '';
-  const fd = document.getElementById('cap-f-dev')?.value   || '';
-  const ft = document.getElementById('cap-f-tipo')?.value  || '';
+// ── Render Control de Cambios ──────────────────────────────────────────────
+function renderCambios() {
+  loadCambiosFromStorage();
+  const q      = document.getElementById('chg-q')?.value.toLowerCase() || '';
+  const fCampo = document.getElementById('chg-f-campo')?.value || '';
+  const fTipo  = document.getElementById('chg-f-tipo')?.value || '';
 
-  CAP_FILTERED = CAP_DATA.filter(d =>
-    (!fa || d._area === fa) &&
-    (!fd || d._dev  === fd) &&
-    (!ft || d._tipo === ft)
+  let filtered = CAMBIOS.filter(c =>
+    (!q      || c.proyecto.toLowerCase().includes(q)) &&
+    (!fCampo || c.campo === fCampo) &&
+    (!fTipo  || c.tipo === fTipo)
   );
 
-  // Si filtramos por área, resetear selección de área/dev
-  if (fa && fa !== CAP_SEL_AREA) { CAP_SEL_AREA = fa; CAP_SEL_DEVS = []; }
-  if (!fa) { CAP_SEL_AREA = null; CAP_SEL_DEVS = []; }
+  const cnt = document.getElementById('chg-count');
+  if (cnt) cnt.textContent = `${filtered.length} cambios`;
 
-  const cnt = document.getElementById('cap-count');
-  if (cnt) cnt.textContent = CAP_FILTERED.length !== CAP_DATA.length
-    ? `${CAP_FILTERED.length} de ${CAP_DATA.length} registros`
-    : `${CAP_DATA.length} registros`;
+  const empty = document.getElementById('cambios-empty');
+  const list  = document.getElementById('cambios-list');
 
-  renderCapacidad();
-}
+  if (!filtered.length) {
+    empty.style.display=''; list.style.display='none';
+    if (CAMBIOS.length && (q||fCampo||fTipo)) {
+      empty.innerHTML = `<div style="font-size:40px;margin-bottom:12px">🔍</div><div style="font-size:14px;font-weight:700">Sin resultados</div><div style="font-size:13px;color:var(--text3);margin-top:6px">No hay cambios que coincidan con los filtros</div>`;
+    }
+    return;
+  }
+  empty.style.display='none'; list.style.display='flex';
 
-function clearCapFilters() {
-  ['cap-f-area','cap-f-dev','cap-f-tipo'].forEach(id => { const e=document.getElementById(id); if(e) e.value=''; });
-  const vEl = document.getElementById('cap-f-vista'); if(vEl) vEl.value='area';
-  CAP_SEL_AREA = null; CAP_SEL_DEVS = [];
-  CAP_FILTERED = [...CAP_DATA];
-  const cnt = document.getElementById('cap-count'); if(cnt) cnt.textContent=`${CAP_DATA.length} registros`;
-  renderCapacidad();
-}
+  const SEM_COLORS_CHG = {
+    'En tiempo':    '#27ae60', 'En riesgo':   '#e67e22', 'Con problema': '#c0392b',
+    'Sin iniciar':  '#888780', 'En pausa':    '#e67e22', 'Finalizado':   '#1a5fb4',
+  };
 
-// ── Render principal ──────────────────────────────────────────────────────────
-function renderCapacidad() {
-  if (!CAP_DATA.length) return;
-  renderCapKPIs();
-  renderCapAreaGrid();
-  renderCapDetail();
-  const vista = document.getElementById('cap-f-vista')?.value || 'area';
-  if (vista !== 'area') renderCapOcp(vista);
-  else document.getElementById('cap-ocp-panel').style.display = 'none';
-}
-
-// ── KPIs globales ─────────────────────────────────────────────────────────────
-function renderCapKPIs() {
-  const byDev = {};
-  CAP_FILTERED.forEach(d => {
-    if (!byDev[d._dev]) byDev[d._dev] = { pct:0, sem:d._semRaw };
-    byDev[d._dev].pct += d._pct;
-  });
-  const counts = { sobre:0, asignado:0, sin:0, vacaciones:0 };
-  Object.values(byDev).forEach(dv => {
-    const k = semCapFromPct(dv.pct, dv.sem);
-    counts[k]++;
-  });
-  const totalDevs = Object.keys(byDev).length;
-  const areas = [...new Set(CAP_FILTERED.map(d=>d._area).filter(Boolean))].length;
-
-  document.getElementById('cap-kpis').innerHTML = [
-    { val: areas,              lbl: 'Áreas',          color:'var(--blue)',  bg:'var(--blue-bg)' },
-    { val: totalDevs,          lbl: 'Desarrolladores', color:'var(--text)',  bg:'var(--surface2)' },
-    { val: counts.sobre,       lbl: 'Sobre asignados', color:'#c0392b',     bg:'#fbeaea' },
-    { val: counts.asignado,    lbl: 'Asignados',       color:'#27ae60',     bg:'#e4f2de' },
-    { val: counts.sin,         lbl: 'Sin asignación',  color:'#e67e22',     bg:'#fff8e1' },
-    { val: counts.vacaciones,  lbl: 'Vacaciones',      color:'#888780',     bg:'#f1f0ee' },
-  ].map(k => `
-    <div style="background:${k.bg};border-radius:var(--r);padding:12px 14px;border:.5px solid var(--border);cursor:pointer" onclick="clearCapFilters()">
-      <div style="font-size:28px;font-weight:900;color:${k.color};line-height:1">${k.val}</div>
-      <div style="font-size:10px;font-weight:700;color:${k.color};opacity:.8;margin-top:3px;text-transform:uppercase;letter-spacing:.4px">${k.lbl}</div>
-    </div>`).join('');
-}
-
-// ── Tarjetas por área ──────────────────────────────────────────────────────────
-function renderCapAreaGrid() {
-  const areas = [...new Set(CAP_FILTERED.map(d=>d._area).filter(Boolean))].sort();
-  if (!areas.length) { document.getElementById('cap-area-grid').innerHTML=''; return; }
-
-  document.getElementById('cap-area-grid').innerHTML = areas.map(area => {
-    const rows  = CAP_FILTERED.filter(d => d._area === area);
-    const lider = rows.find(r=>r._lider)?._lider || '—';
-    const devs  = [...new Set(rows.map(d=>d._dev).filter(Boolean))];
-
-    // Calcular carga por dev
-    const byDev = {};
-    rows.forEach(r => { if (!byDev[r._dev]) byDev[r._dev] = { pct:0, sem:r._semRaw }; byDev[r._dev].pct += r._pct; });
-    const devsArr = Object.entries(byDev);
-    const avgPct  = devsArr.length ? Math.round(devsArr.reduce((a,[,v])=>a+v.pct,0) / devsArr.length) : 0;
-
-    // Semáforo del área (prevalece "sobre" si algún dev está sobre)
-    const hayVac   = devsArr.some(([,v])=>v.sem==='vacaciones' && v.pct===0);
-    const haySobre = devsArr.some(([,v])=>v.pct>100);
-    const areaKey  = haySobre?'sobre':avgPct===0&&hayVac?'vacaciones':avgPct<30?'sin':'asignado';
-    const s = semCap(areaKey);
-    const isActive = CAP_SEL_AREA === area;
-
-    // Pills de devs
-    const pills = devsArr.map(([dev, info]) => {
-      const devKey = semCapFromPct(info.pct, info.sem);
-      const ds     = semCap(devKey);
-      const isSel  = CAP_SEL_DEVS.includes(dev);
-      return `<span class="cap-dev-pill${isSel?' sel':''}"
-        onclick="toggleCapDev('${dev.replace(/'/g,"\\'")}','${area.replace(/'/g,"\\'")}',event)"
-        style="background:${isSel?ds.dot:ds.bg};color:${isSel?'#fff':ds.color};border-color:${isSel?ds.dot:ds.border}">
-        <span style="width:7px;height:7px;border-radius:50%;background:${isSel?'rgba(255,255,255,.7)':ds.dot};display:inline-block;flex-shrink:0"></span>
-        ${dev} <span style="opacity:.75">· ${info.pct}%</span>
-      </span>`;
-    }).join('');
-
-    return `<div class="cap-area-card${isActive?' active':''}" onclick="toggleCapArea('${area.replace(/'/g,"\\'")}',event)">
-      <div class="cap-area-hdr" style="background:${s.bg}">
-        <div class="cap-area-name" style="color:${s.color}">${area}</div>
-        <div class="cap-area-meta">
-          <span>👑 ${lider}</span>
-          <span>👥 ${devs.length} devs</span>
-        </div>
-        <div style="margin-top:10px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <span class="cap-sem-badge" style="background:${s.dot}22;color:${s.color};border:.5px solid ${s.border}">
-              <span style="width:8px;height:8px;border-radius:50%;background:${s.dot};display:inline-block"></span>
-              ${s.label}
-            </span>
-            <span style="font-size:15px;font-weight:900;color:${s.dot}">${avgPct}%</span>
-          </div>
-          <div class="cap-bar-wrap"><div class="cap-bar-fill" style="width:${Math.min(avgPct,100)}%;background:${s.dot}"></div></div>
-        </div>
+  list.innerHTML = filtered.map((c, i) => {
+    const dt    = new Date(c.ts);
+    const fecha = dt.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'});
+    const hora  = dt.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    const lbl   = CAMPOS_LABELS[c.campo] || c.campo;
+    const dotColor = c.campo==='_estatus' ? (SEM_COLORS_CHG[c.valorNuevo]||'var(--blue)') : 'var(--blue)';
+    const isLast = i === filtered.length-1;
+    return `<div class="chg-item">
+      <div class="chg-line">
+        <span class="chg-dot" style="color:${dotColor};background:${dotColor}"></span>
+        ${!isLast?`<div class="chg-vline"></div>`:''}
       </div>
-      <div style="padding:10px 14px">
-        <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Desarrolladores · clic para seleccionar</div>
-        <div class="cap-dev-pills">${pills}</div>
+      <div class="chg-card">
+        <div class="chg-header">
+          <div>
+            <div class="chg-proyecto">${c.proyecto}</div>
+            <div class="chg-meta">
+              ${c.tipo?`<span style="padding:1px 6px;border-radius:3px;font-size:10px;font-weight:700;background:var(--blue-bg);color:var(--blue-t)">${c.tipo}</span> · `:''}
+              ${c.usuario} · ${fecha} ${hora}
+            </div>
+          </div>
+          <span style="font-size:10px;font-weight:700;color:var(--text3);white-space:nowrap">${lbl}</span>
+        </div>
+        <div class="chg-changes">
+          <div class="chg-field">
+            <span class="chg-field-name">${lbl}</span>
+            <span class="chg-old">${c.valorAnterior}</span>
+            <span class="chg-arrow">→</span>
+            <span class="chg-new">${c.valorNuevo}</span>
+          </div>
+        </div>
       </div>
     </div>`;
   }).join('');
 }
 
-// ── Toggle área ────────────────────────────────────────────────────────────────
-function toggleCapArea(area, e) {
-  if (e) e.stopPropagation();
-  if (CAP_SEL_AREA === area) {
-    CAP_SEL_AREA = null; CAP_SEL_DEVS = [];
-  } else {
-    CAP_SEL_AREA = area; CAP_SEL_DEVS = [];
-  }
-  renderCapAreaGrid();
-  renderCapDetail();
-}
-
-// ── Toggle dev (solo misma área) ───────────────────────────────────────────────
-function toggleCapDev(dev, area, e) {
-  if (e) e.stopPropagation();
-  // Criterio 5: selección múltiple solo dentro de la misma área
-  if (CAP_SEL_AREA && CAP_SEL_AREA !== area) {
-    toast('⚠️ Solo puedes seleccionar devs de la misma área', 'error'); return;
-  }
-  CAP_SEL_AREA = area;
-  const idx = CAP_SEL_DEVS.indexOf(dev);
-  if (idx > -1) CAP_SEL_DEVS.splice(idx, 1);
-  else CAP_SEL_DEVS.push(dev);
-  renderCapAreaGrid();
-  renderCapDetail();
-}
-
-// ── Panel detalle devs ─────────────────────────────────────────────────────────
-function renderCapDetail() {
-  const panel = document.getElementById('cap-detail-panel');
-  if (!CAP_SEL_AREA) { panel.style.display='none'; return; }
-
-  let rows = CAP_FILTERED.filter(d => d._area === CAP_SEL_AREA);
-  if (CAP_SEL_DEVS.length) rows = rows.filter(d => CAP_SEL_DEVS.includes(d._dev));
-
-  if (!rows.length) { panel.style.display='none'; return; }
-  panel.style.display = '';
-
-  // Agrupar por dev
-  const byDev = {};
-  rows.forEach(r => {
-    if (!byDev[r._dev]) byDev[r._dev] = { lider:r._lider, area:r._area, pct:0, semRaw:r._semRaw, tasks:[] };
-    byDev[r._dev].pct    += r._pct;
-    byDev[r._dev].tasks.push(r);
-  });
-
-  const totalDevs = Object.keys(byDev).length;
-  const titulo    = CAP_SEL_DEVS.length
-    ? CAP_SEL_DEVS.length === 1 ? CAP_SEL_DEVS[0] : `${CAP_SEL_DEVS.length} desarrolladores seleccionados`
-    : `Todos los devs · ${CAP_SEL_AREA}`;
-
-  panel.innerHTML = `
-    <div class="cap-detail-hdr">
-      <div>
-        <div style="font-size:14px;font-weight:700">${titulo}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px">${CAP_SEL_AREA} · ${totalDevs} desarrollador${totalDevs!==1?'es':''} · ${rows.length} iniciativas</div>
-      </div>
-      <button onclick="CAP_SEL_AREA=null;CAP_SEL_DEVS=[];renderCapAreaGrid();document.getElementById('cap-detail-panel').style.display='none'"
-        style="background:none;border:.5px solid var(--border2);color:var(--text3);border-radius:var(--rs);padding:4px 12px;font-size:12px;cursor:pointer;font-weight:600">✕ Cerrar</button>
-    </div>
-    <div style="padding:14px 16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px">
-      ${Object.entries(byDev).map(([dev, info]) => {
-        const semKey = semCapFromPct(info.pct, info.semRaw);
-        const s = semCap(semKey);
-        const pc = Math.min(info.pct, 100);
-        return `<div class="cap-dev-card" style="border-color:${s.border}">
-          <div class="cap-dev-card-hdr" style="background:${s.bg};border-bottom:.5px solid ${s.border}">
-            <div class="cap-dev-avatar" style="background:${s.dot}">${dev.charAt(0).toUpperCase()}</div>
-            <div style="flex:1;min-width:0">
-              <div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${dev}</div>
-              <div style="font-size:10px;color:${s.color}">${info.area} · ${info.lider||'—'}</div>
-            </div>
-            <div style="text-align:right;flex-shrink:0">
-              <div style="font-size:18px;font-weight:900;color:${s.dot}">${info.pct}%</div>
-              <div style="font-size:9px;font-weight:700;color:${s.color};text-transform:uppercase">${s.label}</div>
-            </div>
-          </div>
-          <div style="height:5px;background:var(--border2)">
-            <div style="height:100%;width:${pc}%;background:${s.dot};transition:width .4s"></div>
-          </div>
-          <div style="padding:10px 12px">
-            ${info.tasks.map(t => {
-              const tb = t._tipo==='Proyecto'?'background:#deeaf8;color:#0d3b78':t._tipo==='Incidencia'?'background:#fbeaea;color:#791f1f':'background:#eceafe;color:#4a3899';
-              const ts = semCap(t._sem);
-              const rec = getDataRecord ? getDataRecord(t._nombre) : null;
-              const smRec = rec ? semGet(rec._estatus) : null;
-              return `<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:.5px solid var(--border)">
-                <span style="padding:2px 5px;border-radius:3px;font-size:9px;font-weight:700;${tb};flex-shrink:0">${t._tipo.slice(0,3).toUpperCase()}</span>
-                <span style="font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${rec?'cursor:pointer;color:var(--blue-t)':''}"
-                  title="${t._nombre||''}" onclick="${rec?`goToDataFromCap('${(t._nombre||'').replace(/'/g,"\\'")}')`:''}">${t._nombre||'—'}</span>
-                ${smRec?`<span style="padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;background:${smRec.bg};color:${smRec.color};flex-shrink:0">${rec._estatus}</span>`:''}
-                <span style="font-size:11px;font-weight:700;color:${ts.dot};flex-shrink:0;min-width:32px;text-align:right">${t._pct}%</span>
-              </div>`;
-            }).join('')}
-          </div>
-        </div>`;
-      }).join('')}
-    </div>`;
-}
-
-// ── Vista ocupación temporal ───────────────────────────────────────────────────
-function renderCapOcp(vista) {
-  const panel = document.getElementById('cap-ocp-panel');
-  const byDev = {};
-  CAP_FILTERED.forEach(r => {
-    if (!byDev[r._dev]) byDev[r._dev] = { area:r._area, lider:r._lider, pct:0, semRaw:r._semRaw };
-    byDev[r._dev].pct += r._pct;
-  });
-  if (!Object.keys(byDev).length) { panel.style.display='none'; return; }
-  panel.style.display = '';
-
-  const PERIODOS = {
-    dia:    ['Lun','Mar','Mié','Jue','Vie'],
-    semana: ['Sem 1','Sem 2','Sem 3','Sem 4'],
-    mes:    ['Mayo','Junio','Julio','Agosto'],
-  };
-  const periodos = PERIODOS[vista] || PERIODOS.dia;
-  const vistaLbl = {dia:'Por Día',semana:'Por Semana',mes:'Por Mes'}[vista];
-
-  panel.innerHTML = `
-    <div style="padding:14px 20px;background:var(--surface2);border-bottom:.5px solid var(--border)">
-      <div style="font-size:13px;font-weight:700">📅 Ocupación ${vistaLbl}</div>
-      <div style="font-size:11px;color:var(--text3);margin-top:2px">% estimado de ocupación del desarrollador por periodo</div>
-    </div>
-    <div style="overflow-x:auto">
-      <table class="cap-ocp-table" style="min-width:500px">
-        <thead><tr>
-          <th>Desarrollador</th>
-          <th>Área</th>
-          ${periodos.map(p=>`<th style="text-align:center">${p}</th>`).join('')}
-          <th style="text-align:center">Total</th>
-          <th style="text-align:center">Estado</th>
-        </tr></thead>
-        <tbody>
-          ${Object.entries(byDev).map(([dev,info],i)=>{
-            const semKey = semCapFromPct(info.pct, info.semRaw);
-            const s = semCap(semKey);
-            // Distribuir con variación mínima por periodo
-            const perPcts = periodos.map((_,pi) => {
-              const v = Math.round(info.pct + Math.sin(pi*2.1+info.pct*0.03)*5);
-              return Math.max(0, Math.min(v, 120));
-            });
-            return `<tr>
-              <td style="font-weight:700">
-                <div style="display:flex;align-items:center;gap:7px">
-                  <span style="width:9px;height:9px;border-radius:50%;background:${s.dot};flex-shrink:0"></span>${dev}
-                </div>
-              </td>
-              <td style="color:var(--text3);font-size:12px">${info.area}</td>
-              ${perPcts.map(p=>{
-                const pc = p>100?'#c0392b':p>80?'#e67e22':'#27ae60';
-                return `<td>
-                  <div class="mini-bar" style="justify-content:center">
-                    <div class="mini-bar-bg"><div class="mini-bar-fill" style="width:${Math.min(p,100)}%;background:${pc}"></div></div>
-                    <span style="font-size:11px;font-weight:700;color:${pc};min-width:32px">${p}%</span>
-                  </div>
-                </td>`;
-              }).join('')}
-              <td style="text-align:center;font-size:14px;font-weight:900;color:${s.dot}">${info.pct}%</td>
-              <td style="text-align:center">
-                <span class="cap-sem-badge" style="background:${s.bg};color:${s.color};border:.5px solid ${s.border};font-size:10px">
-                  <span style="width:7px;height:7px;border-radius:50%;background:${s.dot};display:inline-block"></span>${s.label}
-                </span>
-              </td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>`;
-}
-
-// ── Cruce con portafolio ──────────────────────────────────────────────────────
-function getDataRecord(nombre) {
-  if (!nombre || !window.DB || !window.DB.length) return null;
-  const n = nombre.toLowerCase().trim();
-  return window.DB.find(d => (d._nombre||'').toLowerCase().trim() === n) || null;
-}
-function goToDataFromCap(nombre) {
-  if (!nombre) return;
-  document.getElementById('f-q').value = nombre;
-  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.getElementById('page-data').classList.add('active');
-  document.querySelectorAll('.nav-btn').forEach(b=>{if(b.textContent.includes('Data'))b.classList.add('active');});
-  applyFilters();
-  toast('🔗 Mostrando en Data: '+nombre);
-}
-
-// ── Exportar HTML ─────────────────────────────────────────────────────────────
-function exportCapHTML() {
-  if (!CAP_FILTERED.length) { toast('Sin datos para exportar','error'); return; }
+function exportCambiosHTML() {
+  loadCambiosFromStorage();
+  if (!CAMBIOS.length) { toast('Sin cambios registrados','error'); return; }
   const now = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Control de Cambios · PMO</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,'Segoe UI',sans-serif;color:#181816;background:#f5f4f1}
+.body{max-width:900px;margin:0 auto;padding:2rem}
+table{width:100%;border-collapse:collapse}th{padding:9px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:#888;background:#f0ede8;border-bottom:.5px solid #ddd;text-align:left}
+td{padding:9px 12px;border-bottom:.5px solid #eee;font-size:12px}tr:nth-child(even) td{background:#fafaf9}
+.old{background:#fbeaea;color:#791f1f;padding:2px 7px;border-radius:4px;text-decoration:line-through}
+.new{background:#e4f2de;color:#1b5e20;padding:2px 7px;border-radius:4px;font-weight:600}
+@media print{body{background:#fff}.body{padding:.5rem}}</style></head><body><div class="body">
+<div style="background:linear-gradient(135deg,#0d3b78,#1a5fb4);color:#fff;border-radius:12px;padding:1.5rem 2rem;margin-bottom:1.5rem">
+  <div style="font-size:20px;font-weight:900;margin-bottom:4px">🔄 Control de Cambios · PMO TI</div>
+  <div style="font-size:12px;opacity:.8">Generado el ${now} · ${CAMBIOS.length} cambios registrados</div>
+</div>
+<div style="background:#fff;border-radius:10px;border:.5px solid #ddd;overflow:hidden">
+<table><thead><tr><th>Fecha</th><th>Proyecto</th><th>Tipo</th><th>Campo</th><th>Antes</th><th>Después</th><th>Usuario</th></tr></thead>
+<tbody>${CAMBIOS.map(c=>{
+  const dt=new Date(c.ts);
+  const f=dt.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})+' '+dt.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+  return`<tr><td style="white-space:nowrap;color:#888">${f}</td><td style="font-weight:600">${c.proyecto}</td><td>${c.tipo||'—'}</td>
+  <td style="font-weight:600">${CAMPOS_LABELS[c.campo]||c.campo}</td>
+  <td><span class="old">${c.valorAnterior}</span></td>
+  <td><span class="new">${c.valorNuevo}</span></td>
+  <td style="color:#888">${c.usuario}</td></tr>`;
+}).join('')}</tbody></table></div>
+<div style="text-align:center;padding:1rem;font-size:11px;color:#888;margin-top:1rem">PMO TI · ${now}</div>
+</div></body></html>`;
+  const blob=new Blob([html],{type:'text/html'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=`Control-Cambios-PMO-${new Date().toISOString().slice(0,10)}.html`;a.click();
+  toast('📄 Control de cambios exportado');
+}
 
-  const byDev = {};
-  CAP_FILTERED.forEach(d => {
-    if (!byDev[d._dev]) byDev[d._dev] = { area:d._area, lider:d._lider, pct:0, semRaw:d._semRaw, tasks:[] };
-    byDev[d._dev].pct    += d._pct;
-    byDev[d._dev].tasks.push(d);
+// ══════════════════════════════════════════════════════════════════════════════
+// HISTÓRICO DE ESTATUS — trazabilidad por proyecto
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Construir historial de estatus por proyecto desde CAMBIOS + DB actual
+function buildEstatusHist() {
+  // Para cada proyecto en DB, obtener historial de cambios de estatus
+  const byProyecto = {};
+  DB.forEach(d => {
+    byProyecto[d._nombre] = {
+      nombre:     d._nombre,
+      tipo:       d._tipo,
+      pm:         d._pm,
+      estatus:    normEstatus(d._estatus),
+      avance:     d._avance || 0,
+      historial:  [],
+    };
   });
-  const counts = {sobre:0,asignado:0,sin:0,vacaciones:0};
-  Object.values(byDev).forEach(dv=>{ counts[semCapFromPct(dv.pct,dv.semRaw)]++; });
 
-  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
-<title>Capacidad Equipo · PMO TI</title>
-<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,'Segoe UI',sans-serif;color:#181816;background:#f5f4f1;font-size:13px}
+  // Agregar historial desde CAMBIOS (campo _estatus)
+  loadCambiosFromStorage();
+  CAMBIOS.filter(c => c.campo === '_estatus').forEach(c => {
+    if (byProyecto[c.proyecto]) {
+      byProyecto[c.proyecto].historial.push({
+        ts: c.ts, anterior: c.valorAnterior, nuevo: c.valorNuevo, usuario: c.usuario,
+      });
+    }
+  });
+
+  return Object.values(byProyecto);
+}
+
+function tieneRetraso(row) {
+  // Con problema o En riesgo = retraso
+  return ['Con problema','En riesgo'].includes(row.estatus);
+}
+
+function renderEstatusHist() {
+  if (!DB.length) {
+    document.getElementById('eh-empty').style.display='';
+    document.getElementById('eh-table-wrap').style.display='none';
+    document.getElementById('eh-kpis').innerHTML='';
+    return;
+  }
+
+  const data = buildEstatusHist();
+  const q          = document.getElementById('eh-q')?.value.toLowerCase() || '';
+  const fEstatus   = document.getElementById('eh-f-estatus')?.value || '';
+  const fTipo      = document.getElementById('eh-f-tipo')?.value || '';
+  const fRetraso   = document.getElementById('eh-f-retraso')?.value || '';
+
+  // Poblar filtro estatus
+  const selE = document.getElementById('eh-f-estatus');
+  if (selE && selE.options.length <= 1) {
+    const ests = [...new Set(data.map(d=>d.estatus).filter(Boolean))].sort();
+    ests.forEach(e => { const o=document.createElement('option'); o.value=e; o.text=e; selE.appendChild(o); });
+  }
+
+  let filtered = data.filter(d =>
+    (!q        || d.nombre.toLowerCase().includes(q)) &&
+    (!fEstatus || d.estatus === fEstatus) &&
+    (!fTipo    || d.tipo === fTipo) &&
+    (!fRetraso || (fRetraso==='si'?tieneRetraso(d):!tieneRetraso(d)))
+  );
+
+  // KPIs
+  const total      = data.length;
+  const conRetraso = data.filter(tieneRetraso).length;
+  const sinRetraso = data.filter(d=>!tieneRetraso(d)).length;
+  const conHist    = data.filter(d=>d.historial.length>0).length;
+
+  document.getElementById('eh-kpis').innerHTML = [
+    {v:total,      l:'Total iniciativas', c:'var(--blue)',  bg:'var(--blue-bg)'},
+    {v:conRetraso, l:'Con retraso',       c:'#c0392b',     bg:'#fbeaea'},
+    {v:sinRetraso, l:'Sin retraso',       c:'#27ae60',     bg:'#e4f2de'},
+    {v:conHist,    l:'Con historial',     c:'var(--text2)', bg:'var(--surface2)'},
+  ].map(k=>`<div class="eh-kpi" style="background:${k.bg};border-color:${k.c}22">
+    <div class="eh-kpi-v" style="color:${k.c}">${k.v}</div>
+    <div class="eh-kpi-l" style="color:${k.c}">${k.l}</div>
+  </div>`).join('');
+
+  const cnt = document.getElementById('eh-count');
+  if (cnt) cnt.textContent = `${filtered.length} de ${total} iniciativas`;
+
+  document.getElementById('eh-empty').style.display = filtered.length?'none':'';
+  document.getElementById('eh-table-wrap').style.display = filtered.length?'':'none';
+
+  if (!filtered.length) return;
+
+  const tbody = document.getElementById('eh-tbody');
+  tbody.innerHTML = filtered.map(d => {
+    const s   = semGet ? semGet(d.estatus) : { bg:'#eee', color:'#555', hex:'#999', bdr:'#ccc' };
+    const ret = tieneRetraso(d);
+    const tipoBg = d.tipo==='Proyecto'?'background:#deeaf8;color:#0d3b78':'background:#eceafe;color:#4a3899';
+    const histPills = d.historial.length
+      ? d.historial.slice(0,4).map(h => {
+          const hs = semGet ? semGet(h.nuevo) : {bg:'#eee',color:'#555',hex:'#999',bdr:'#ccc'};
+          const fh = new Date(h.ts).toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
+          return `<span class="eh-hist-pill" style="background:${hs.bg};color:${hs.color};border-color:${hs.bdr}" title="${h.anterior} → ${h.nuevo} · ${fh}">
+            <span style="width:6px;height:6px;border-radius:50%;background:${hs.hex};display:inline-block"></span>${h.nuevo}
+          </span>`;
+        }).join('')
+      : `<span style="font-size:11px;color:var(--text3)">Sin cambios registrados</span>`;
+
+    const lastChange = d.historial.length
+      ? new Date(d.historial[0].ts).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})
+      : '—';
+
+    return `<tr>
+      <td><span style="padding:3px 8px;border-radius:5px;font-size:11px;font-weight:700;${tipoBg}">${d.tipo||'—'}</span></td>
+      <td style="font-weight:600;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${d.nombre}">${d.nombre}</td>
+      <td style="font-size:12px;color:var(--text3)">${d.pm||'—'}</td>
+      <td>
+        <span class="eh-sem" style="background:${s.bg};color:${s.color};border:.5px solid ${s.bdr}">
+          <span style="width:8px;height:8px;border-radius:50%;background:${s.hex};display:inline-block;flex-shrink:0"></span>
+          ${d.estatus}
+        </span>
+      </td>
+      <td><div class="eh-hist-pills">${histPills}</div></td>
+      <td style="text-align:center">
+        <span class="eh-retraso" style="background:${ret?'#fbeaea':'#e4f2de'};color:${ret?'#791f1f':'#1b5e20'}">
+          ${ret?'⚠️ Sí':'✅ No'}
+        </span>
+      </td>
+      <td style="font-size:11px;color:var(--text3)">${lastChange}</td>
+    </tr>`;
+  }).join('');
+}
+
+function exportEstatusHTML() {
+  if (!DB.length) { toast('Sin datos','error'); return; }
+  const data = buildEstatusHist();
+  const now  = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const conRetraso = data.filter(tieneRetraso).length;
+  const sinRetraso = data.filter(d=>!tieneRetraso(d)).length;
+
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Histórico Estatus · PMO</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,'Segoe UI',sans-serif;color:#181816;background:#f5f4f1}
 .body{max-width:1100px;margin:0 auto;padding:2rem}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-bottom:1.5rem}
-.card{background:#fff;border-radius:10px;overflow:hidden;border:.5px solid #ddd;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-.card-hdr{padding:12px 14px;border-bottom:.5px solid #eee}
-table{width:100%;border-collapse:collapse}
-th{text-align:left;padding:9px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:#888;background:#f0ede8;border-bottom:.5px solid #ddd}
-td{padding:9px 12px;border-bottom:.5px solid #eee;vertical-align:middle}
-tr:nth-child(even) td{background:#fafaf9}
-.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:5px;font-size:11px;font-weight:700}
-.dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0}
-.bar-w{display:flex;align-items:center;gap:6px}.bar-bg{width:55px;height:5px;background:#eee;border-radius:3px;overflow:hidden}.bar-fill{height:100%;border-radius:3px}
-@media print{body{background:#fff}.body{padding:.5rem}@page{margin:1.5cm;size:A4 landscape}}
-</style></head><body><div class="body">
-<div style="background:linear-gradient(135deg,#0d3b78,#1a5fb4);color:#fff;border-radius:12px;padding:2rem;margin-bottom:1.5rem">
-  <div style="font-size:10px;opacity:.7;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">ANA Net 2.0 · PMO TI</div>
-  <div style="font-size:22px;font-weight:900;margin-bottom:4px">📊 Reporte de Capacidad Operativa</div>
-  <div style="font-size:12px;opacity:.8">Generado el ${now} · ${Object.keys(byDev).length} desarrolladores · ${CAP_FILTERED.length} iniciativas</div>
+table{width:100%;border-collapse:collapse}th{padding:9px 12px;font-size:10px;font-weight:700;text-transform:uppercase;color:#888;background:#f0ede8;border-bottom:.5px solid #ddd;text-align:left}
+td{padding:9px 12px;border-bottom:.5px solid #eee;font-size:12px;vertical-align:middle}tr:nth-child(even) td{background:#fafaf9}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:5px;font-size:11px;font-weight:700}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+@media print{body{background:#fff}.body{padding:.5rem}@page{margin:1.5cm;size:A4 landscape}}</style>
+</head><body><div class="body">
+<div style="background:linear-gradient(135deg,#0d3b78,#1a5fb4);color:#fff;border-radius:12px;padding:1.5rem 2rem;margin-bottom:1.5rem">
+  <div style="font-size:20px;font-weight:900;margin-bottom:4px">📉 Histórico de Estatus · PMO TI</div>
+  <div style="font-size:12px;opacity:.8">Generado el ${now}</div>
 </div>
 <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.5rem">
-  ${Object.entries(counts).map(([k,c])=>{const s=semCap(k);return`<div style="background:${s.bg};border:.5px solid ${s.border};border-radius:8px;padding:12px 16px"><div style="font-size:10px;font-weight:700;color:${s.color};text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">${s.label}</div><div style="font-size:28px;font-weight:900;color:${s.dot}">${c}</div></div>`;}).join('')}
+  <div style="background:#deeaf8;border-radius:8px;padding:12px 16px"><div style="font-size:10px;font-weight:700;color:#0d3b78;text-transform:uppercase;margin-bottom:4px">Total</div><div style="font-size:28px;font-weight:900;color:#0d3b78">${data.length}</div></div>
+  <div style="background:#fbeaea;border-radius:8px;padding:12px 16px"><div style="font-size:10px;font-weight:700;color:#791f1f;text-transform:uppercase;margin-bottom:4px">Con Retraso</div><div style="font-size:28px;font-weight:900;color:#c0392b">${conRetraso}</div></div>
+  <div style="background:#e4f2de;border-radius:8px;padding:12px 16px"><div style="font-size:10px;font-weight:700;color:#1b5e20;text-transform:uppercase;margin-bottom:4px">Sin Retraso</div><div style="font-size:28px;font-weight:900;color:#27ae60">${sinRetraso}</div></div>
+  <div style="background:#f1f0ee;border-radius:8px;padding:12px 16px"><div style="font-size:10px;font-weight:700;color:#4a4a48;text-transform:uppercase;margin-bottom:4px">Con Historial</div><div style="font-size:28px;font-weight:900;color:#4a4a48">${data.filter(d=>d.historial.length>0).length}</div></div>
 </div>
-<div class="grid">
-  ${Object.entries(byDev).map(([dev,info])=>{
-    const sk=semCapFromPct(info.pct,info.semRaw); const s=semCap(sk); const pc=Math.min(info.pct,100);
-    return`<div class="card" style="border-color:${s.border}">
-      <div class="card-hdr" style="background:${s.bg}">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-          <div style="font-size:13px;font-weight:700;color:${s.color}">${dev}</div>
-          <div style="font-size:16px;font-weight:900;color:${s.dot}">${info.pct}%</div>
-        </div>
-        <div style="font-size:11px;color:${s.color};opacity:.8;margin-bottom:8px">${info.area} · ${info.lider||'—'}</div>
-        <div style="display:flex;align-items:center;gap:6px">
-          <div style="flex:1;height:6px;background:rgba(0,0,0,.1);border-radius:3px;overflow:hidden">
-            <div style="height:100%;width:${pc}%;background:${s.dot};border-radius:3px"></div>
-          </div>
-          <span class="badge" style="background:${s.dot}22;color:${s.color};border:.5px solid ${s.border};font-size:10px;padding:2px 7px">
-            <span class="dot" style="background:${s.dot}"></span>${s.label}
-          </span>
-        </div>
-      </div>
-      <div style="padding:8px 12px">
-        ${info.tasks.map(t=>{
-          const tb=t._tipo==='Proyecto'?'background:#deeaf8;color:#0d3b78':t._tipo==='Incidencia'?'background:#fbeaea;color:#791f1f':'background:#eceafe;color:#4a3899';
-          const ts=semCap(t._sem); const pc2=t._pct>100?'#c0392b':t._pct>80?'#e67e22':'#27ae60';
-          return`<div style="display:flex;align-items:center;gap:5px;padding:4px 0;border-bottom:.5px solid #eee">
-            <span class="badge" style="${tb};padding:1px 5px;font-size:9px">${t._tipo.slice(0,3).toUpperCase()}</span>
-            <span style="flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${t._nombre||''}">${t._nombre||'—'}</span>
-            <div class="bar-w"><div class="bar-bg"><div class="bar-fill" style="width:${Math.min(t._pct,100)}%;background:${pc2}"></div></div>
-            <span style="font-size:11px;font-weight:700;color:${pc2};min-width:30px">${t._pct}%</span></div>
-          </div>`;
-        }).join('')}
-      </div>
-    </div>`;
-  }).join('')}
-</div>
-<div style="background:#fff;border-radius:10px;border:.5px solid #ddd;overflow:hidden;margin-bottom:1.5rem">
-  <table><thead><tr><th>Clasificación</th><th>Nombre</th><th>Área</th><th>Líder</th><th>Desarrollador</th><th>% Asignado</th><th>Semáforo</th></tr></thead>
-  <tbody>${CAP_FILTERED.map(d=>{
-    const s=semCap(d._sem); const pc=d._pct>100?'#c0392b':d._pct>80?'#e67e22':'#27ae60';
-    const tb=d._tipo==='Proyecto'?'background:#deeaf8;color:#0d3b78':d._tipo==='Incidencia'?'background:#fbeaea;color:#791f1f':'background:#eceafe;color:#4a3899';
-    return`<tr><td><span class="badge" style="${tb}">${d._tipo}</span></td>
-    <td style="font-weight:600">${d._nombre||'—'}</td><td>${d._area}</td><td>${d._lider}</td><td style="font-weight:600">${d._dev}</td>
-    <td><div class="bar-w"><div class="bar-bg"><div class="bar-fill" style="width:${Math.min(d._pct,100)}%;background:${pc}"></div></div>
-    <span style="font-size:11px;font-weight:700;color:${pc}">${d._pct}%</span></div></td>
-    <td><span class="badge" style="background:${s.bg};color:${s.color};border:.5px solid ${s.border}"><span class="dot" style="background:${s.dot}"></span>${s.label}</span></td></tr>`;
-  }).join('')}</tbody></table>
-</div>
-<div style="text-align:center;padding:1.5rem;font-size:11px;color:#888;border-top:.5px solid #eee">ANA Net 2.0 · PMO TI · ${now} · Reporte generado con PMO Portafolio TI</div>
+<div style="background:#fff;border-radius:10px;border:.5px solid #ddd;overflow:hidden">
+<table><thead><tr><th>Tipo</th><th>Proyecto / Iniciativa</th><th>PM</th><th>Estatus Actual</th><th>Retraso</th><th>Cambios registrados</th></tr></thead>
+<tbody>${data.map(d=>{
+  const s=semGet?semGet(d.estatus):{bg:'#eee',color:'#555',hex:'#999',bdr:'#ccc'};
+  const ret=tieneRetraso(d);
+  const tb=d.tipo==='Proyecto'?'background:#deeaf8;color:#0d3b78':'background:#eceafe;color:#4a3899';
+  return`<tr>
+  <td><span class="badge" style="${tb}">${d.tipo||'—'}</span></td>
+  <td style="font-weight:600">${d.nombre}</td>
+  <td style="color:#888">${d.pm||'—'}</td>
+  <td><span class="badge" style="background:${s.bg};color:${s.color};border:.5px solid ${s.bdr}"><span class="dot" style="background:${s.hex}"></span>${d.estatus}</span></td>
+  <td><span class="badge" style="background:${ret?'#fbeaea':'#e4f2de'};color:${ret?'#791f1f':'#1b5e20'}">${ret?'⚠️ Con retraso':'✅ Sin retraso'}</span></td>
+  <td style="font-size:11px;color:#888">${d.historial.length?d.historial.map(h=>h.anterior+'→'+h.nuevo).join(' · '):'Sin cambios'}</td>
+  </tr>`;
+}).join('')}</tbody></table></div>
+<div style="text-align:center;padding:1rem;font-size:11px;color:#888;margin-top:1rem">PMO TI · ${now}</div>
 </div></body></html>`;
-
-  const blob = new Blob([html],{type:'text/html'});
-  const a    = document.createElement('a');
-  a.href     = URL.createObjectURL(blob);
-  a.download = `Capacidad-PMO-${new Date().toISOString().slice(0,10)}.html`;
-  a.click();
-  toast('📄 Reporte de capacidad exportado');
+  const blob=new Blob([html],{type:'text/html'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=`Historico-Estatus-PMO-${new Date().toISOString().slice(0,10)}.html`;a.click();
+  toast('📄 Histórico de estatus exportado');
 }
 </script>
 </body>
