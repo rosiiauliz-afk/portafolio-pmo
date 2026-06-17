@@ -298,7 +298,6 @@ setInterval(() => {
 // Actualizar indicador de estado en sidebar
 setTimeout(() => {
   const dot = document.getElementById('fb-dot');
-<style>
 </script>
 <style>
 :root{
@@ -586,12 +585,12 @@ tr:hover td{background:var(--bg)}
     </div>
     <div style="margin-bottom:12px">
       <label style="font-size:11px;font-weight:700;color:#6b6a65;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:4px">Correo electrónico</label>
-      <input id="login-email" type="email" placeholder="usuario@empresa.com" onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()"
+      <input id="login-email" type="email" placeholder="usuario@empresa.com" onkeydown="if(event.key===Enter)document.getElementById(login-pass).focus()"
         style="width:100%;padding:10px 12px;border:1.5px solid #e0ddd8;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
     </div>
     <div style="margin-bottom:16px">
       <label style="font-size:11px;font-weight:700;color:#6b6a65;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:4px">Contraseña</label>
-      <input id="login-pass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"
+      <input id="login-pass" type="password" placeholder="••••••••" onkeydown="if(event.key===Enter)doLogin()"
         style="width:100%;padding:10px 12px;border:1.5px solid #e0ddd8;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
     </div>
     <div id="login-error" style="color:#c0392b;font-size:12px;margin-bottom:10px;min-height:16px;text-align:center"></div>
@@ -1323,7 +1322,6 @@ function goPage(name, btn) {
   document.getElementById('page-' + name).classList.add('active');
   if (btn) btn.classList.add('active');
 
-<script>
   if (btn) btn.classList.add('active');
   // Siempre re-renderizar al navegar — refleja cualquier edición previa
   if (name === 'inicio'   && DB.length)  renderDash();
@@ -5309,10 +5307,6 @@ function exportDataExcel() {
   XLSX.writeFile(wb, `PMO-Data-${fecha}.xlsx`);
   toast(`📊 Excel descargado · ${filteredDB.length} registros`);
 }
-</script>
-</body>
-</html>
-
 
 // ═══════════ JIRA BRIDGE VARIABLES ═══════════
 const BRIDGE = "http://localhost:8765/jira-proxy";
@@ -5974,9 +5968,9 @@ function toast(msg,type=''){
   clearTimeout(toastTimer);
   toastTimer=setTimeout(()=>el.classList.remove('show'),3000);
 }
-</script>
-</body>
-</html>
+
+
+
 
 // ── Descargar server.py ──────────────────────────────────────────────────────
 function downloadServerPy() {
