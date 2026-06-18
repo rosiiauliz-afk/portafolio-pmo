@@ -975,9 +975,8 @@ tr:hover td{background:var(--bg)}
     </div>
   </div>
 
-</main>
-</div><!-- /app-root -->
-</div>
+
+
 
   <!-- JIRA SYNC -->
   <div class="page" id="page-jira">
@@ -1074,6 +1073,9 @@ tr:hover td{background:var(--bg)}
       </div>
     </div>
   </div>
+</main>
+</div><!-- /app-root -->
+</div>
 
 <!-- MODAL SYNC URL -->
 <div class="overlay" id="ovSync">
@@ -1339,6 +1341,7 @@ function goPage(name, btn) {
   if (name === 'historico')              renderSnaps();
   if (name === 'cambios')                renderCambiosPage();
   if (name === 'usuarios')              { if(typeof window.loadUsersList==='function') window.loadUsersList(); }
+  if (name === 'ppt')                   { if(typeof refreshPPTGrid==='function') refreshPPTGrid(); }
 }
 
 // ══════════════════════════════════════════
