@@ -332,8 +332,8 @@ setTimeout(() => {
 body{font-family:-apple-system,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px}
 
 /* layout */
-.app{display:grid;grid-template-columns:230px 1fr;min-height:100vh}
-aside{background:var(--surface);border-right:.5px solid var(--border);position:sticky;top:0;height:100vh;display:flex;flex-direction:column}
+.app{display:grid;grid-template-columns:230px 1fr;height:100vh;overflow:hidden}
+aside{background:var(--surface);border-right:.5px solid var(--border);height:100vh;display:flex;flex-direction:column;overflow:hidden}
 .brand{padding:1.25rem 1.25rem 1rem;border-bottom:.5px solid var(--border)}
 .brand-name{font-size:15px;font-weight:700;letter-spacing:-.3px}
 .brand-sub{font-size:11px;color:var(--text3);margin-top:2px}
@@ -353,7 +353,7 @@ nav{padding:.75rem .5rem;flex:1;overflow-y:auto}
 .file-info{font-size:10px;color:var(--text3);text-align:center;line-height:1.5;padding:0 4px}
 
 /* pages */
-main{overflow:auto}
+main{overflow-y:auto;height:100vh;flex:1}
 .page{display:none;padding:2rem}
 .page.active{display:block}
 .page-header{margin-bottom:1.5rem;display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
@@ -608,7 +608,7 @@ tr:hover td{background:var(--bg)}
   </div>
 </div>
 <!-- ══ APLICACIÓN ════════════════════════════════════════════════════════════ -->
-<div id="app-root" style="display:none">
+<div id="app-root" style="display:none;height:100vh">
 <div class="app">
 
 <!-- ══ SIDEBAR ══ -->
@@ -1319,8 +1319,6 @@ function goPage(name, btn) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
   if (btn) btn.classList.add('active');
-
-  if (btn) btn.classList.add('active');
   // Siempre re-renderizar al navegar — refleja cualquier edición previa
   if (name === 'inicio'   && DB.length)  renderDash();
   if (name === 'resumen'  && DB.length)  renderResumen();
@@ -1804,11 +1802,13 @@ function afterLoad(type, filename, count) {
   const txt = type === 'pptx' ? document.getElementById('txtPptx') : document.getElementById('txtExcel');
   if (txt) txt.textContent = '↺ Recargar ' + (type === 'pptx' ? 'PPTX' : 'Excel');
 
-  // File info
-  const parts = [];
-  if (pptxFile)  parts.push('📑 ' + pptxFile + ' (' + DB.filter(d=>d._source==='pptx').length + ')');
-  if (xlsxFile)  parts.push('📗 ' + xlsxFile + ' (' + DB.filter(d=>d._source==='excel').length + ')');
-  document.getElementById('fileInfo').textContent = parts.join('\n') + '\n' + DB.length + ' total';
+  // File info - Jira source
+  const jiraCount = DB.filter(d=>d._source==='jira').length;
+  const otherCount = DB.length - jiraCount;
+  const fiParts = [];
+  if (jiraCount) fiParts.push('🔗 Jira (' + jiraCount + ' proyectos)');
+  if (otherCount) fiParts.push('📋 Otros (' + otherCount + ')');
+  document.getElementById('fileInfo').textContent = (fiParts.join(' · ') || '📋 ' + DB.length + ' registros') + ' ' + DB.length + ' total';
 
   // Show dashboard
   document.getElementById('landing').style.display = 'none';
@@ -3533,7 +3533,7 @@ function clearStorage() {
   DB=[]; RDB=[]; SNAPS=[]; pptxFile=''; xlsxFile='';
   document.getElementById('landing').style.display='block';
   document.getElementById('dashboard').style.display='none';
-  document.getElementById('fileInfo').textContent='Ningún archivo cargado';
+  document.getElementById('fileInfo').textContent='Sin datos — conecta Jira';
   document.getElementById('btnPptx').classList.remove('done');
   document.getElementById('txtPptx').textContent='Cargar PPTX';
   document.getElementById('btnExcel').classList.remove('done');
@@ -3615,13 +3615,12 @@ function restoreUIFromData() {
     const txtExcel = document.getElementById('txtExcel');
     if (pptxFile && btnPptx) { btnPptx.classList.add('done'); }
     if (pptxFile && txtPptx) { txtPptx.textContent='↺ Recargar PPTX'; }
-    if (xlsxFile && btnExcel) { btnExcel.classList.add('done'); }
-    if (xlsxFile && txtExcel) { txtExcel.textContent='↺ Recargar Excel'; }
-    const parts=[];
-    if(pptxFile) parts.push('📑 '+pptxFile+' ('+DB.filter(d=>d._source==='pptx').length+')');
-    if(xlsxFile) parts.push('📗 '+xlsxFile+' ('+DB.filter(d=>d._source==='excel').length+')');
+    // Excel UI removed - Jira is the data source
     const fi = document.getElementById('fileInfo');
-    if(fi) fi.textContent = parts.join('\n')+(parts.length?'\n':'')+DB.length+' total';
+    if(fi) {
+      const jc = DB.filter(d=>d._source==='jira').length;
+      fi.textContent = (jc ? '🔗 Jira (' + jc + ')' : '📋 ' + DB.length + ' registros') + ' ' + DB.length + ' total';
+    }
     const btnSnap = document.getElementById('btnSnap');
     if(btnSnap) btnSnap.disabled = false;
     renderDash();
