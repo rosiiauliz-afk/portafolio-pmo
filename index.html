@@ -649,10 +649,10 @@ tr:hover td{background:var(--bg)}
     </button>
     <div class="file-info" id="fileInfo" style="font-size:11px;color:var(--text3);margin:4px 0"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px">
-      <button onclick="exportSession()" style="padding:6px;background:none;border:.5px solid var(--border2);border-radius:var(--rs);font-size:11px;color:var(--blue-t);cursor:pointer;font-weight:600;" title="Exportar sesión completa como JSON (incluye histórico)">💾 Exportar</button>
-      <button onclick="importSession()" style="padding:6px;background:none;border:.5px solid var(--border2);border-radius:var(--rs);font-size:11px;color:var(--green);cursor:pointer;font-weight:600;" title="Importar sesión desde archivo JSON">📂 Importar</button>
+      <button onclick="exportSession()" style="padding:6px;background:none;border:.5px solid var(--border2);border-radius:var(--rs);font-size:11px;cursor:pointer;color:var(--text2)">📤 Exportar</button>
+      <button onclick="importSession()" style="padding:6px;background:none;border:.5px solid var(--border2);border-radius:var(--rs);font-size:11px;cursor:pointer;color:var(--text2)">📥 Importar</button>
     </div>
-    <button onclick="clearStorage()" style="width:100%;padding:6px;background:none;border:.5px solid var(--border2);border-radius:var(--rs);font-size:11px;color:var(--text3);cursor:pointer;" title="Borrar todos los datos guardados en este navegador">🗑️ Borrar datos guardados</button>
+    <button onclick="const jBtn=document.querySelector("[onclick*='jira']"); goPage('jira', jBtn)" style="width:100%;padding:7px;background:var(--blue);color:#fff;border:none;border-radius:var(--rs);font-size:12px;font-weight:700;cursor:pointer;margin-top:4px">🔗 Jira Sync</button>
   </div>
 </aside>
 
@@ -665,30 +665,19 @@ tr:hover td{background:var(--bg)}
     <div id="landing">
       <div class="upload-wrap">
         <div class="upload-card" id="dropZone">
-          <div style="font-size:44px;margin-bottom:14px">📊</div>
-          <div class="upload-title">Carga tu portafolio</div>
-          <div class="upload-sub">Carga el PPTX de <strong>Proyectos</strong> y/o el Excel de <strong>Requerimientos</strong>.<br>Puedes cargar, editar y recargar cuantas veces necesites.</div>
-          <div class="drop-zones">
-            <div class="drop-zone dz-pptx" id="dz-pptx" onclick="document.getElementById('iPptx').click()">
-              <div class="drop-zone-icon">📑</div>
-              <div class="drop-zone-title">PPTX — Proyectos</div>
-              <div class="drop-zone-sub">Cada slide = un proyecto</div>
-              <button class="drop-zone-btn" onclick="event.stopPropagation();document.getElementById('iPptx').click()">Seleccionar .pptx</button>
-              <div class="drop-zone-status" id="st-pptx" style="color:var(--text3)">Sin archivo</div>
-            </div>
-            <div class="drop-zone dz-excel" id="dz-excel" onclick="document.getElementById('iExcel').click()">
-              <div class="drop-zone-icon">📗</div>
-              <div class="drop-zone-title">Excel — Requerimientos</div>
-              <div class="drop-zone-sub">Cada fila = un requerimiento</div>
-              <button class="drop-zone-btn" onclick="event.stopPropagation();document.getElementById('iExcel').click()">Seleccionar .xlsx</button>
-              <div class="drop-zone-status" id="st-excel" style="color:var(--text3)">Sin archivo</div>
-            </div>
+          <div style="font-size:52px;margin-bottom:16px">🔗</div>
+          <div class="upload-title">Portafolio PMO · TI</div>
+          <div class="upload-sub" style="max-width:360px;margin:0 auto 1.5rem">
+            Tus proyectos se cargan directamente desde <strong>Jira</strong>.<br>
+            Ve a <strong>Jira Sync</strong>, conecta y sincroniza para ver el portafolio.
           </div>
-          <div class="fields-hint">
-            <strong>Campos extraídos automáticamente:</strong>
-            <span class="f-tag">Tipo</span><span class="f-tag">Nombre</span><span class="f-tag">Estatus</span>
-            <span class="f-tag">PM</span><span class="f-tag">Responsable TI</span><span class="f-tag">Área</span>
-            <span class="f-tag">Prioridad</span><span class="f-tag">Avance %</span>
+          <div style="display:flex;flex-direction:column;gap:10px;align-items:center">
+            <button onclick="const jBtn=document.querySelector("[onclick*='jira']"); goPage('jira', jBtn)" style="padding:12px 32px;background:#1a5fb4;color:#fff;border:none;border-radius:var(--rs);font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px">
+              🔗 Ir a Jira Sync
+            </button>
+            <div style="font-size:11px;color:var(--text3)">También puedes importar una sesión guardada:</div>
+            <button onclick="importSession()" style="padding:7px 20px;background:none;border:.5px solid var(--border2);border-radius:var(--rs);font-size:12px;cursor:pointer;color:var(--text2)">📥 Importar sesión JSON</button>
+          </div>
           </div>
         </div>
       </div>
@@ -3956,7 +3945,9 @@ async function loadFromUrls(cfg, silent=false) {
     const direct = toDirectUrl(cfg.excelUrl);
     try {
       const buf = await fetchFile(direct);
-      xlsxFile = 'URL-Excel';
+      xlsxFile = 'Jira';
+  const fi2 = document.getElementById('fileInfo');
+  if (fi2 && window.DB && window.DB.length) fi2.textContent = '🔗 Jira · ' + window.DB.length + ' registros';
       await loadExcel(buf, 'portafolio-sync.xlsx');
       loaded++;
     } catch(e) {
@@ -5553,6 +5544,8 @@ function syncJiraToPortfolio() {
   if (typeof window.refreshAllViews==='function') window.refreshAllViews();
   if (typeof window.saveToFirebase==='function') window.saveToFirebase();
   toast('✅ ' + selected.length + ' proyectos Jira sincronizados al portafolio');
+  const fi = document.getElementById('fileInfo');
+  if (fi) fi.textContent = '🔗 Jira (' + selected.length + ' proyectos) ' + selected.length + ' total';
   setTimeout(()=>{ const btn=document.querySelector('[onclick="goPage(\'data\',this)"]'); if(btn) goPage('data',btn); }, 600);
 }
 
