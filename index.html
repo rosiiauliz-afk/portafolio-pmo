@@ -79,7 +79,14 @@ onAuthStateChanged(auth, async (user) => {
     const loginScreen = document.getElementById('login-screen');
     if (loginScreen) loginScreen.style.display = 'none';
     const appRoot = document.getElementById('app-root');
-    if (appRoot) { appRoot.style.display = 'block'; appRoot.style.height = '100vh'; }
+    if (appRoot) {
+      appRoot.style.display = 'block';
+      appRoot.style.height = '100vh';
+      // Initialize page visibility
+      document.querySelectorAll('.page').forEach(p => { p.style.display = 'none'; });
+      const initPage = document.querySelector('.page.active') || document.getElementById('page-inicio');
+      if (initPage) { initPage.style.display = 'block'; }
+    }
     window.applyRoleRestrictions();
     window.toast('👋 Bienvenido, ' + (user.displayName || user.email?.split('@')[0]) + ' · ' + (ROLES[roleName]?.label || roleName));
     // Iniciar escucha de datos
@@ -1316,9 +1323,15 @@ Object.defineProperties(window, {
 // NAV
 // ══════════════════════════════════════════
 function goPage(name, btn) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  // Hide ALL pages with inline style (overrides everything)
+  document.querySelectorAll('.page').forEach(p => {
+    p.classList.remove('active');
+    p.style.display = 'none';
+  });
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('page-' + name).classList.add('active');
+  // Show target page with inline style
+  const target = document.getElementById('page-' + name);
+  if (target) { target.classList.add('active'); target.style.display = 'block'; }
   if (btn) btn.classList.add('active');
   const mainEl = document.querySelector('main'); if (mainEl) mainEl.scrollTop = 0;
   // Siempre re-renderizar al navegar — refleja cualquier edición previa
@@ -6057,4 +6070,3 @@ HTTPServer(("", PORT), Handler).serve_forever()
 </script>
 </body>
 </html>
-
