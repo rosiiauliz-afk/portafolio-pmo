@@ -1320,6 +1320,7 @@ function goPage(name, btn) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
   if (btn) btn.classList.add('active');
+  const mainEl = document.querySelector('main'); if (mainEl) mainEl.scrollTop = 0;
   // Siempre re-renderizar al navegar — refleja cualquier edición previa
   if (name === 'inicio'   && DB.length)  renderDash();
   if (name === 'resumen'  && DB.length)  renderResumen();
