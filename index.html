@@ -329,11 +329,11 @@ setTimeout(() => {
   --shadow:0 1px 3px rgba(0,0,0,.07),0 4px 12px rgba(0,0,0,.04);
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px}
+html,body{height:100%;overflow:hidden}body{font-family:-apple-system,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
 
 /* layout */
-.app{display:grid;grid-template-columns:230px 1fr;height:100vh;overflow:hidden}
-aside{background:var(--surface);border-right:.5px solid var(--border);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+#app-root{height:100%;display:flex;flex-direction:column}.app{display:grid;grid-template-columns:230px 1fr;height:100%;overflow:hidden}
+aside{background:var(--surface);border-right:.5px solid var(--border);height:100%;display:flex;flex-direction:column;overflow:hidden}
 .brand{padding:1.25rem 1.25rem 1rem;border-bottom:.5px solid var(--border)}
 .brand-name{font-size:15px;font-weight:700;letter-spacing:-.3px}
 .brand-sub{font-size:11px;color:var(--text3);margin-top:2px}
@@ -353,7 +353,7 @@ nav{padding:.75rem .5rem;flex:1;overflow-y:auto}
 .file-info{font-size:10px;color:var(--text3);text-align:center;line-height:1.5;padding:0 4px}
 
 /* pages */
-main{overflow-y:auto;height:100vh;flex:1}
+main{overflow-y:auto;height:100%;flex:1;min-width:0}
 .page{display:none;padding:2rem}
 .page.active{display:block}
 .page-header{margin-bottom:1.5rem;display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
@@ -608,7 +608,7 @@ tr:hover td{background:var(--bg)}
   </div>
 </div>
 <!-- ══ APLICACIÓN ════════════════════════════════════════════════════════════ -->
-<div id="app-root" style="display:none;height:100vh">
+<div id="app-root" style="display:none">
 <div class="app">
 
 <!-- ══ SIDEBAR ══ -->
@@ -1012,7 +1012,8 @@ tr:hover td{background:var(--bg)}
         <div id="jira-toolbar" style="display:none;flex-wrap:wrap;gap:8px;margin-bottom:1rem;align-items:center">
           <div style="font-size:13px;color:var(--text2)">Conectado a Jira · <span id="jira-proj-count" style="font-weight:700;color:var(--blue)">0</span> proyectos</div>
           <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
-            <button onclick="syncJiraToPortfolio()" style="padding:7px 16px;background:var(--green);color:#fff;border:none;border-radius:var(--rs);font-size:13px;font-weight:700;cursor:pointer">🔄 Sincronizar al Portafolio</button>
+            <button onclick="syncJiraToPortfolio(false)" style="padding:7px 16px;background:var(--green);color:#fff;border:none;border-radius:var(--rs);font-size:13px;font-weight:700;cursor:pointer">🔄 Sincronizar (merge)</button>
+            <button onclick="syncJiraToPortfolio(true)" style="padding:7px 16px;background:#c62828;color:#fff;border:none;border-radius:var(--rs);font-size:13px;font-weight:700;cursor:pointer" title="Borra todos los datos anteriores y carga solo Jira">🗑 Limpiar y sincronizar Jira</button>
             <button onclick="selectAllJiraProjects()" style="padding:7px 12px;background:var(--surface);border:.5px solid var(--border2);border-radius:var(--rs);font-size:13px;cursor:pointer">Todos</button>
             <button onclick="deselectAllJiraProjects()" style="padding:7px 12px;background:var(--surface);border:.5px solid var(--border2);border-radius:var(--rs);font-size:13px;cursor:pointer">Ninguno</button>
           </div>
@@ -5511,7 +5512,7 @@ function selectAllJiraProjects()   { _jiraSelIds=new Set(_jiraProjects.map(p=>p.
 function deselectAllJiraProjects() { _jiraSelIds.clear(); document.querySelectorAll('.jira-card').forEach(c=>c.classList.remove('jsel')); }
 
 // ── Sync Jira → Portafolio ───────────────────────────────────────────────────
-function syncJiraToPortfolio() {
+function syncJiraToPortfolio(clean=false) {
   const selected = _jiraProjects.filter(p=>_jiraSelIds.has(p.id));
   if (!selected.length) { toast('Selecciona al menos un proyecto', 'warn'); return; }
   const normEst = e => {
@@ -5519,6 +5520,13 @@ function syncJiraToPortfolio() {
     const m={sin_iniciar:'Sin iniciar',tiempo:'En tiempo',riesgo:'En riesgo',problema:'Con Problema',pausa:'Pausado',finalizado:'Finalizado'};
     return m[e]||'Sin iniciar';
   };
+  if (clean) {
+    // Wipe all existing data - Jira becomes the only source
+    window.DB = [];
+    window.RDB = [];
+    window.SNAPS = [];
+    toast('🗑 Datos anteriores eliminados — cargando solo Jira...');
+  }
   selected.forEach(p => {
     const rec = {
       _tipo:'Proyecto', _nombre:p.nombre, _estatus:normEst(p.estatus),
