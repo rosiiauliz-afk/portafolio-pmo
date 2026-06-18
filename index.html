@@ -652,7 +652,7 @@ tr:hover td{background:var(--bg)}
       <button onclick="exportSession()" style="padding:6px;background:none;border:.5px solid var(--border2);border-radius:var(--rs);font-size:11px;cursor:pointer;color:var(--text2)">📤 Exportar</button>
       <button onclick="importSession()" style="padding:6px;background:none;border:.5px solid var(--border2);border-radius:var(--rs);font-size:11px;cursor:pointer;color:var(--text2)">📥 Importar</button>
     </div>
-    <button onclick="const jBtn=document.querySelector("[onclick*='jira']"); goPage('jira', jBtn)" style="width:100%;padding:7px;background:var(--blue);color:#fff;border:none;border-radius:var(--rs);font-size:12px;font-weight:700;cursor:pointer;margin-top:4px">🔗 Jira Sync</button>
+    <button onclick="goPage('jira', document.querySelector('.nav-btn[onclick*=jira]'))" style="width:100%;padding:7px;background:var(--blue);color:#fff;border:none;border-radius:var(--rs);font-size:12px;font-weight:700;cursor:pointer;margin-top:4px">🔗 Jira Sync</button>
   </div>
 </aside>
 
@@ -672,7 +672,7 @@ tr:hover td{background:var(--bg)}
             Ve a <strong>Jira Sync</strong>, conecta y sincroniza para ver el portafolio.
           </div>
           <div style="display:flex;flex-direction:column;gap:10px;align-items:center">
-            <button onclick="const jBtn=document.querySelector("[onclick*='jira']"); goPage('jira', jBtn)" style="padding:12px 32px;background:#1a5fb4;color:#fff;border:none;border-radius:var(--rs);font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px">
+            <button onclick="goPage('jira', document.querySelector('.nav-btn[onclick*=jira]'))" style="padding:12px 32px;background:#1a5fb4;color:#fff;border:none;border-radius:var(--rs);font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px">
               🔗 Ir a Jira Sync
             </button>
             <div style="font-size:11px;color:var(--text3)">También puedes importar una sesión guardada:</div>
@@ -691,8 +691,8 @@ tr:hover td{background:var(--bg)}
           <div class="page-sub" id="dash-sub">—</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-primary" onclick="document.getElementById('iPptx').click()">📑 Recargar PPTX</button>
-          <button class="btn btn-ghost" style="border-color:#27ae60;color:#2d6a1f" onclick="document.getElementById('iExcel').click()">📗 Recargar Excel</button>
+          <button class="btn btn-primary" onclick="goPage('jira', document.querySelector('.nav-btn[onclick*=jira]'))">🔗 Jira Sync</button>
+          <button class="btn btn-ghost" onclick="goPage('ppt', document.querySelector('.nav-btn[onclick*=ppt]'))">📊 Generar PPT</button>
         </div>
       </div>
       <div id="dash-content"></div>
