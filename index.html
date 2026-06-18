@@ -2449,18 +2449,17 @@ function doDelete(){
 
 // ── Refresca TODAS las vistas (siempre después de cualquier mutación de datos)
 function refreshAllViews() {
-  renderDash();
+  // Solo renderizar la página activa actual — no forzar renderDash siempre
+  const active = document.querySelector('.page.active');
+  const pid = active ? active.id : 'page-inicio';
+  if (pid === 'page-inicio')   renderDash();
+  if (pid === 'page-resumen')  renderResumen();
+  if (pid === 'page-graficos') renderCharts();
   populateFilters();
   applyFilters();
   populateRFilters();
   applyRFilters();
   renderSnaps();
-  // Re-renderizar la vista activa específicamente
-  const active = document.querySelector('.page.active');
-  if (!active) return;
-  const pid = active.id;
-  if (pid === 'page-resumen')   renderResumen();
-  if (pid === 'page-graficos')  renderCharts();
 }
 
 // ══════════════════════════════════════════
@@ -3625,7 +3624,10 @@ function restoreUIFromData() {
     }
     const btnSnap = document.getElementById('btnSnap');
     if(btnSnap) btnSnap.disabled = false;
-    renderDash();
+    // Solo renderizar la página activa — no forzar inicio
+    const activePage = document.querySelector('.page.active');
+    const activeId = activePage ? activePage.id : 'page-inicio';
+    if (activeId === 'page-inicio') renderDash();
     populateFilters();
     applyFilters();
     populateRFilters();
@@ -5644,7 +5646,13 @@ async function generatePPTSelected() {
 
 // Actualizar grid PPT cuando cambian datos del portafolio
 const _origRefreshAll=window.refreshAllViews;
-window.refreshAllViews=function(){if(typeof _origRefreshAll==='function')_origRefreshAll();refreshPPTGrid();};
+window.refreshAllViews=function(){
+  if(typeof _origRefreshAll==='function') _origRefreshAll();
+  if(typeof refreshPPTGrid==='function') {
+    const ap = document.querySelector('.page.active');
+    if (ap && ap.id === 'page-ppt') refreshPPTGrid();
+  }
+};
 
 
 // ═══════════ TEMPLATE PPTX ═══════════
@@ -6049,3 +6057,4 @@ HTTPServer(("", PORT), Handler).serve_forever()
 </script>
 </body>
 </html>
+
